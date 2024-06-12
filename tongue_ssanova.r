@@ -82,7 +82,7 @@ library(gss)
 library(plyr)
 
 # CONVERT POLAR COORDINATES TO CARTESIAN COORDINATES
-# make.cartesian <- function(tr, origin=c(0,0), flip=TRUE){    
+# make.cartesian <- function(tr, origin=c(0,0), flip=FALSE){    
 #     X <- apply(tr, 1, function(x,y) origin[1]-x[2]*cos(x[1]))
 #     Y <- apply(tr, 1, function(x,y) x[2]*sin(x[1])-origin[2])
 #     # this was added 12/13/2021 to prevent positive unflipped values from coming back with negative Y values
@@ -97,22 +97,27 @@ library(plyr)
 
 
 #CONVERT POLAR COORDINATES TO CARTESIAN COORDINATES
-make.cartesian <- function(tr, origin=c(0,0), flip=TRUE){    
+make.cartesian <- function(tr, origin=c(0,0), flip=FALSE){    
   # X <- apply(tr, 1, function(x,y) origin[1]-x[2]*cos(x[1]))
   # Y <- apply(tr, 1, function(x,y) x[2]*sin(x[1])-origin[2])
-  X <- origin[1]-tr[,2]*cos(tr[,1])
-  Y <- tr[,2]*sin(tr[,1])-origin[2]
-  # this was added 12/13/2021 to prevent positive unflipped values from coming back with negative Y values
-  if (flip){
-    xy <- cbind(X, Y)
-  }else{
-    xy <- cbind(X, -Y)
-  }
+
+  # this was changed 6/11/24 to undo the transformation in make.polar
+  # tr[,1] = -pi-tr[,1] 
+  tr[,1] = (1.5*pi-tr[,1])%%(2*pi)
+  X <- origin[1]+tr[,2]*cos(tr[,1])
+  Y <- origin[2]+tr[,2]*sin(tr[,1])
+
+  # this was added 12/13/2021 to prevent positive unflipped values from coming back with negative Y values (removed 6/12/24)
+  # if (flip){
+    xy <- data.frame(X=X, Y=Y)
+  # }else{
+  #   xy <- cbind(X, -Y)
+  # }
   return(xy)
 }
 
 
-# make.cartesian <- function(tr, origin=c(0,0), flip=TRUE){    
+# make.cartesian <- function(tr, origin=c(0,0), flip=FALSE){    
 #     # this was added 12/13/2021 to prevent positive unflipped values from coming back with negative Y values
 #     # origin[1] = -origin[1]
 #     # xy[,1] = -xy[,1]
@@ -134,7 +139,7 @@ make.cartesian <- function(tr, origin=c(0,0), flip=TRUE){
 # }
 
 #CONVERT CARTESIAN COORDINATES TO POLAR COORDINATES
-make.polar <- function(data.xy, origin=c(0,0), flip=TRUE){
+make.polar.old <- function(data.xy, origin=c(0,0), flip=FALSE){
     # xy <- cbind(data.xy$X, data.xy$Y)
     xy <- data.xy[,c('X','Y')]
     # all_r <- apply(xy, 1, function(x) sqrt((x[1]-origin[1])^2 + (x[2]-origin[2])^2))
@@ -142,8 +147,8 @@ make.polar <- function(data.xy, origin=c(0,0), flip=TRUE){
 
     # to handle origin higher than tongue root
 
-    origin[1] = -origin[1]
-    xy[,1] = -xy[,1]
+    # origin[1] = -origin[1]
+    # xy[,1] = -xy[,1]
 
     if (flip){
         # all_theta <- apply(xy, 1, function(x,y) atan2(x[2]-origin[2], x[1]-origin[1]))
@@ -162,6 +167,25 @@ make.polar <- function(data.xy, origin=c(0,0), flip=TRUE){
 }
 # through 1/23/22 adding pi after calculating theta
 # from 1/24/22 if not flipping, changing sign of x and then changing sign of theta and not adding pi
+# from 6/9/24 switched to the function below, which assumes data is already flipped correctly
+
+make.polar <- function(data.xy, origin=c(0,0), flip=FALSE){
+    # xy <- cbind(data.xy$X, data.xy$Y)
+    xy <- data.xy[,c('X','Y')]
+    # all_r <- apply(xy, 1, function(x) sqrt((x[1]-origin[1])^2 + (x[2]-origin[2])^2))
+    all_r <- sqrt((xy[,1]-origin[1])^2 + (xy[,2]-origin[2])^2)
+
+    all_theta <- atan2(xy[,2]-origin[2], xy[,1]-origin[1])
+
+    # transform the angles so that they go clockwise with:
+    #  0=posterior, pi/2=superior, pi=anterior, 3*pi/2 ~ -pi/2 = inferior (which should not exist in the data)
+    # all_theta = (-all_theta-pi/2)%%(2*pi)-pi/2
+    all_theta = (1.5*pi-all_theta)%%(2*pi)
+    data.tr <- data.xy
+    data.tr$X <- all_theta
+    data.tr$Y <- all_r
+    return(data.tr)
+}
 
 #RESCALE DATA FROM PIXELS TO CENTIMETERS
 us.rescale<-function(data, usscale, X='X', Y='Y'){
@@ -172,22 +196,34 @@ us.rescale<-function(data, usscale, X='X', Y='Y'){
 
 #SELECT AN APPROPRIATE ORIGIN FOR THE DATA
 
-# if my_ssanova is an ssanova result based on my_data (with flip=TRUE), then these two commands should return the same thing:
+# if my_ssanova is an ssanova result based on my_data (with flip=FALSE), then these two commands should return the same thing:
 #   my_ssanova$origin*c(1,-1)
-#   select.origin(my_data$X, my_data$Y, my_data$token, flip=TRUE)
+#   select.origin(my_data$X, my_data$Y, my_data$token, flip=FALSE)
    
 
 
 select.origin <- function(Xs, Ys, tokens, method='xmean_ymin', flip){
 
     require(plyr)
-    
+
     if (method=='xmean_ymin'){
         # if (mean(Ys)>0){
         if (flip){
             return(c(mean(Xs), max(Ys)*1.01))
         }else{
             return(c(mean(Xs), min(Ys)-0.01*diff(range(Ys))))
+        }
+    }else if (method=='xmean_y05'){
+        if (flip){
+            return(c(mean(Xs), as.numeric(quantile(Ys, 0.95))))
+        }else{
+            return(c(mean(Xs), as.numeric(quantile(Ys, 0.05))))
+        }
+    }else if (method=='xmean_y025'){
+        if (flip){
+            return(c(mean(Xs), as.numeric(quantile(Ys, 0.975))))
+        }else{
+            return(c(mean(Xs), as.numeric(quantile(Ys, 0.025))))
         }
     }else if (method=='yextremes'){
         if (mean(Ys)>0){
@@ -390,7 +426,7 @@ plot.tongue.ss <- function(ss.result, data.cat='word', lwd=3, main='', CI.fill=F
         # }else{
         #     main <- ''
         }
-        plot(0, 0, xlim=xlim, ylim=ylim,xlab=plot.labels[2],ylab=plot.labels[3], main=main, type='n', axes=axes)
+        plot(0, 0, xlim=xlim, ylim=ylim,xlab=plot.labels[2],ylab=plot.labels[3], main=main, type='n', axes=axes, asp=1)
     }
 
     if (!is.null(palate)){
@@ -457,7 +493,7 @@ guess.data.cat <- function(data, data.cat){
 }
 
 
-reshow.traces <- function(what_to_plot, to.highlight=c(''), to.plot=c(''), token.label='token', flip=TRUE, main=NULL, 
+reshow.traces <- function(what_to_plot, to.highlight=c(''), to.plot=c(''), token.label='token', flip=FALSE, main=NULL, 
                             overplot=FALSE, is.polar=FALSE, origin=c(0,0), show.legend=TRUE, xlim=NULL, ylim=NULL,
                             trace.palette=NULL, ghost.palette=NULL, color.alpha=0.1, color.v=0.75, palate=NULL, xlab='X', ylab='Y', 
                             x.axis.step=NULL, y.axis.step=NULL, legend.pos='bottomright', drop_levels=FALSE){
@@ -497,12 +533,16 @@ reshow.traces <- function(what_to_plot, to.highlight=c(''), to.plot=c(''), token
 }
 
 
-interpolate_polar_data = function(data.polar, interpolate){
+interpolate_polar_data = function(data.polar, interpolate, linear=TRUE){
     data.polar.interpolated = c()        
     for (tid in unique(data.polar$token_id)){
         subdata = subset(data.polar, token_id==tid)
         rownames(subdata) = NULL
-        subdata_interp_XY <- spline(subdata$X, subdata$Y, xout=seq(subdata$X[1], subdata$X[nrow(subdata)], length.out=interpolate))
+        if (linear){
+            subdata_interp_XY <- approx(subdata$X, subdata$Y, n=interpolate)
+        }else{
+            subdata_interp_XY <- spline(subdata$X, subdata$Y, xout=seq(subdata$X[1], subdata$X[nrow(subdata)], length.out=interpolate))
+        }
         interp_token = subset(subdata, select=-c(X,Y))[1,]
         interp_token = suppressWarnings(cbind(interp_token, data.frame(X=subdata_interp_XY$x, Y=subdata_interp_XY$y)))
         data.polar.interpolated = rbind(data.polar.interpolated, interp_token)
@@ -511,7 +551,7 @@ interpolate_polar_data = function(data.polar, interpolate){
 }
 
 #PLOT THE ORIGINAL DATA
-show.traces <- function(data, data.cat='word', to.highlight=c(''), to.plot=c(''), token.label='token', flip=TRUE, main='', 
+show.traces <- function(data, data.cat='word', to.highlight=c(''), to.plot=c(''), token.label='token', flip=FALSE, main='', 
                         overplot=FALSE, is.polar=FALSE, origin=c(0,0), show.legend=TRUE, xlim=NULL, ylim=NULL,
                         trace.palette=NULL, ghost.palette=NULL, color.alpha=0.1, color.v=0.75, palate=NULL, xlab='X', ylab='Y', 
                         axes=TRUE, legend.pos='bottomright', drop_levels=FALSE, interpolate=NULL){ 
@@ -566,12 +606,12 @@ show.traces <- function(data, data.cat='word', to.highlight=c(''), to.plot=c('')
 
     if (overplot==FALSE){
         if (is.null(xlim)){
-            xlim <- range(rbind(data$X, palate))
+            xlim <- range(c(data$X, palate$X))
         }
         if (is.null(ylim)){
-            ylim <- range(rbind(data$Y, palate))
+            ylim <- range(c(data$Y, palate$Y))
         }
-        plot(0,0, type='n', xlim=xlim, ylim=ylim,xlab=xlab,ylab=ylab, main=main, axes=axes)
+        plot(0,0, type='n', xlim=xlim, ylim=ylim,xlab=xlab,ylab=ylab, main=main, axes=axes, asp=1)
     }
 
     if (!is.null(palate)){
@@ -595,7 +635,7 @@ show.traces <- function(data, data.cat='word', to.highlight=c(''), to.plot=c('')
 
 #CALCULATE AN SSANOVA IN POLAR COORDINATES AND THEN PLOT IT BACK IN CARTESIAN COORDINATES
 polar.ssanova <- function(data, data.cat='word', scale=1, origin.method='xmean_ymin', debug=FALSE, plotting=TRUE, main='', 
-                          CI.fill=FALSE, printing=FALSE, flip=TRUE, cartesian.only=FALSE, is.polar=FALSE, show.legend=TRUE, 
+                          CI.fill=FALSE, printing=FALSE, flip=FALSE, cartesian.only=FALSE, is.polar=FALSE, show.legend=TRUE, 
                           plot.labels=c(main,'X','Y'), overplot=FALSE, xlim=NULL, ylim=NULL, lwd=3, alpha=1.4, crop=FALSE,
                           Fit.palette=NULL, CI.palette=NULL, color.alpha=0.25, Fit.v=0.75, CI.v=0.75, ltys=1:100, axes=T,
                           origin=NULL, palate=NULL, token.label='token', length.out=1000, SDs=1.96, legend.pos='bottomright',
@@ -605,6 +645,11 @@ polar.ssanova <- function(data, data.cat='word', scale=1, origin.method='xmean_y
         data.cat <- names(data)[!names(data)%in%c(token.label,'X','Y')]
         warning(paste('Using column \"',data.cat,'" to group the data.\nTo avoid this warning, use "polar.ssanova(data, \'',data.cat,'\')"',sep=''))
     }
+
+    if (is.polar){
+        cart_data = make.cartesian(data[,c('X','Y')], origin, flip=FALSE)
+    }
+
     if (flip==TRUE){
     #    data$Y <- -data$Y
         if(!is.null(palate)){
@@ -615,11 +660,19 @@ polar.ssanova <- function(data, data.cat='word', scale=1, origin.method='xmean_y
         }
 
     }else if (is.null(ylim)){
-        ylim = range(data$Y, na.rm=T)
+        if (is.polar){
+            ylim = range(c(cart_data$Y,palate$Y), na.rm=T)
+        }else{
+            ylim = range(c(data$Y,palate$Y), na.rm=T)
+        }
     }
 
     if (is.null(xlim)){
-        xlim = range(data$X, na.rm=T)
+        if (is.polar){
+            xlim = range(c(cart_data$X,palate$X), na.rm=T)
+        }else{
+            xlim = range(c(data$X,palate$X), na.rm=T)
+        }
     }
 
     data.scaled <- us.rescale(data, scale)
@@ -631,14 +684,16 @@ polar.ssanova <- function(data, data.cat='word', scale=1, origin.method='xmean_y
     }else{
         if (is.polar){
             #origin <- select.origin(data.scaled$X, data.scaled$Y, method=origin.method)
-            origin <- c(0,0)
-            print (origin)
+            if (is.null(origin)){
+                origin <- c(0,0)
+            }
+            # print (origin)
             data.polar <- data.scaled
         }else{
             if (is.null(origin)){
                 origin <- select.origin(data.scaled$X, data.scaled$Y, data.scaled[,token.label], method=origin.method, flip=flip)
             }
-            print(paste('origin is',paste(origin, collapse=', ')))
+            # print(paste('origin is',paste(origin, collapse=', ')))
             # print(summary(data.scaled$Y))
             data.polar <- make.polar(data.scaled, origin, flip)
             # print('DATA POLAR')
@@ -689,7 +744,7 @@ polar.ssanova <- function(data, data.cat='word', scale=1, origin.method='xmean_y
 
 #CALCULATE AN SSANOVA IN CARTESIAN COORDINATES (NOT ADVISED FOR ULTRASOUND DATA)
 cart.ssanova <- function(data, data.cat='word', scale=1, origin.method='xmean_ymin', debug=FALSE, plotting=TRUE, main='', 
-                         CI.fill=FALSE, printing=FALSE, flip=TRUE, show.legend=TRUE, plot.labels=c(main,'X','Y'), 
+                         CI.fill=FALSE, printing=FALSE, flip=FALSE, show.legend=TRUE, plot.labels=c(main,'X','Y'), 
                          overplot=FALSE, xlim=NULL, ylim=NULL, lwd=3, alpha=1.4, crop=FALSE, 
                          Fit.palette=NULL, CI.palette=NULL, color.alpha=0.25, Fit.v=0.75, CI.v=0.75, ltys=1:100, axes=T, 
                          length.out=1000, SDs=1.96, legend.pos='bottomright', drop_levels=FALSE){
@@ -762,7 +817,7 @@ contiguousequal <- function(data, value, position) {
 
 
 
-difference_plot <- function(ss, level1, level2, main=NULL, flip=TRUE){
+difference_plot <- function(ss, level1, level2, main=NULL, flip=FALSE){
 
     require(pracma)
     require(geosphere)
@@ -866,7 +921,7 @@ difference_plot <- function(ss, level1, level2, main=NULL, flip=TRUE){
                            round(deltaX,1), round(deltaY,1), round(contour_displacement_angle,2),
                            round(centroid_deltaXY[1],1), round(centroid_deltaXY[2],1), round(polygon_displacement_angle,2))
 
-    plot(0,0,type='n', xlim=ss$xlim, ylim=ss$ylim, main=main, xlab='X', ylab='Y')
+    plot(0,0,type='n', xlim=ss$xlim, ylim=ss$ylim, main=main, xlab='X', ylab='Y', asp=1)
 
     total_area <- 0
 
