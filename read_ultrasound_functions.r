@@ -519,18 +519,29 @@ add_analysis_angles <- function(filepath, aaa_data, speakers=NULL, angles_only=F
 
 
 add_textgrid_segmentation <- function(aaa_data, speakers=NULL, merge_vl=FALSE, planes=c('sag'), 
-	tiers=c('phone','word'), match_words_to_phrase=TRUE, middle_is_quarter=c(), simple_tiers=c('YPR')){
+	tiers=c('phone','word'), match_words_to_phrase=TRUE, middle_is_quarter=c(), simple_tiers=c('YPR'), one_folder=NULL){
 
 	if (is.null(speakers)) speakers=names(aaa_data)
 
 	for (sp in speakers){
-		print(paste0('looking for ','export_',sp,' within the directory ',readwritepath))
-		export_path <- paste0(readwritepath,'/export_',sp)
-		textgrid_filelist <- list.files(export_path, '*TextGrid')
+		print(sp)
+		if (is.null(one_folder)){
+			print(paste0('looking for ','export_',sp,' within the directory ',readwritepath))
+			export_path <- paste0(readwritepath,'/export_',sp)
+			textgrid_filelist <- list.files(export_path, '*TextGrid')
+		}else{
+			print(paste0('looking for textgrid in ',one_folder,' matching ',paste0(sp,'.*TextGrid')))
+			export_path <- one_folder
+			textgrid_filelist <- list.files(export_path, paste0(sp,'.*TextGrid'))
+		}
+		
 
 		for (plane in planes){
+
+			
 			dfname = ifelse(plane=='video', 'lip_traces', 'tongue_traces')
-			if('Annotation_Label'%in%names(aaa_data[[sp]][[plane]][[dfname]])){
+			# if('Annotation_Label'%in%names(aaa_data[[sp]][[plane]][[dfname]])){
+			if (nrow(aaa_data[[sp]][[plane]][[dfname]])){
 				aaa_data[[sp]][[plane]][[dfname]]$word <- NA
 				aaa_data[[sp]][[plane]][[dfname]]$phone <- NA
 				aaa_data[[sp]][[plane]][[dfname]]$middle_frame <- FALSE
@@ -590,129 +601,135 @@ add_textgrid_segmentation <- function(aaa_data, speakers=NULL, merge_vl=FALSE, p
 			# print (txt_info)
 			for (plane in planes){
 				dfname = ifelse(plane=='video', 'lip_traces', 'tongue_traces')
+				if (nrow(aaa_data[[sp]][[plane]][[dfname]])){
 
-				if(is.na(txt_date_time)){
-					rownumbers_for_textgrid = 1:nrow(aaa_data[[sp]][[plane]][[dfname]])
-				}else{
-					rownumbers_for_textgrid = which(aaa_data[[sp]][[plane]][[dfname]]$Date_and_time_of_recording==txt_date_time)
-				}
+					if(is.na(txt_date_time)){
+						rownumbers_for_textgrid = 1:nrow(aaa_data[[sp]][[plane]][[dfname]])
+					}else{
+						rownumbers_for_textgrid = which(aaa_data[[sp]][[plane]][[dfname]]$Date_and_time_of_recording==txt_date_time)
+					}
 
-				rows_for_textgrid = aaa_data[[sp]][[plane]][[dfname]][rownumbers_for_textgrid,]
+					rows_for_textgrid = aaa_data[[sp]][[plane]][[dfname]][rownumbers_for_textgrid,]
 
-				for (tier in tiers){
+					for (tier in tiers){
 
-					for (r in 1:nrow(textgrid[[tier]])){
+						for (r in 1:nrow(textgrid[[tier]])){
 
-						if (!r%%1000){
-							print(paste0(plane,': processing ',tier,' tier interval ',r,' of ',nrow(textgrid[[tier]])))
-						}
-
-						interval_label <- textgrid[[tier]][r,'text']
-						interval_xmin <- textgrid[[tier]][r,'xmin']
-						interval_xmax <- textgrid[[tier]][r,'xmax']
-
-						is_a_match = which(with(rows_for_textgrid, 
-											Time_of_sample_in_recording>=interval_xmin
-											 & Time_of_sample_in_recording<interval_xmax))
-
-						matching_rows = rownumbers_for_textgrid[is_a_match]
-
-						if (length(matching_rows)){
-							aaa_data[[sp]][[plane]][[dfname]][matching_rows,tier] = interval_label
-							if (!tier %in% simple_tiers){
-								aaa_data[[sp]][[plane]][[dfname]][matching_rows,paste(tier,'start',sep='_')] <- interval_xmin
-								aaa_data[[sp]][[plane]][[dfname]][matching_rows,paste(tier,'end',sep='_')] <- interval_xmax
-								aaa_data[[sp]][[plane]][[dfname]][matching_rows,paste(tier,'id',sep='_')] <- paste(gsub('\\.TextGrid', '', fn), 1, interval_label, round(interval_xmin,3),sep='_')
+							if (!r%%1000){
+								print(paste0(plane,': processing ',tier,' tier interval ',r,' of ',nrow(textgrid[[tier]])))
 							}
-						}
 
-						if (tier=='word'){
-							# make sure this word is really in the target phrase. sometimes we get an adjacent word overlapping 
-							# the target phrase interval by < 1 ms for some reason and we want to exclude those frames instead
-							# of labeling them as something else
+							interval_label <- textgrid[[tier]][r,'text']
+							interval_xmin <- textgrid[[tier]][r,'xmin']
+							interval_xmax <- textgrid[[tier]][r,'xmax']
 
-							# this is so that words like "a" don't happen to match a substring of a word in the phrase
-							current_phrase = unlist(strsplit(tolower(unique(aaa_data[[sp]][[plane]][[dfname]][matching_rows,'Annotation_Label'])),'_'))
-							is_in_phrase = tolower(gsub("'","",interval_label)) %in% current_phrase | interval_label == 'sp'
+							is_a_match = which(with(rows_for_textgrid, 
+												Time_of_sample_in_recording>=interval_xmin
+												 & Time_of_sample_in_recording<interval_xmax))
 
-							# if (sum(na.omit(matches_word))){
+							matching_rows = rownumbers_for_textgrid[is_a_match]
+
 							if (length(matching_rows)){
-								if (match_words_to_phrase){
-									if (!is_in_phrase){
-										print (paste('excluding', sum(matching_rows), 'frame(s) of ', tier, 
-											interval_label, 'from phrase', current_phrase))
-										aaa_data[[sp]][[plane]][[dfname]][matching_rows & !is_in_phrase,'exclude'] = TRUE
-									}
+								aaa_data[[sp]][[plane]][[dfname]][matching_rows,tier] = interval_label
+								if (!tier %in% simple_tiers){
+									aaa_data[[sp]][[plane]][[dfname]][matching_rows,paste(tier,'start',sep='_')] <- interval_xmin
+									aaa_data[[sp]][[plane]][[dfname]][matching_rows,paste(tier,'end',sep='_')] <- interval_xmax
+									aaa_data[[sp]][[plane]][[dfname]][matching_rows,paste(tier,'id',sep='_')] <- paste(gsub('\\.TextGrid', '', fn), 1, interval_label, round(interval_xmin,3),sep='_')
 								}
 							}
-						
 
-						}else if (tier=='phone'){
+							if (tier=='word'){
+								# make sure this word is really in the target phrase. sometimes we get an adjacent word overlapping 
+								# the target phrase interval by < 1 ms for some reason and we want to exclude those frames instead
+								# of labeling them as something else
 
-							if (length(matching_rows)){
+								# this is so that words like "a" don't happen to match a substring of a word in the phrase
+								current_phrase = unlist(strsplit(tolower(unique(aaa_data[[sp]][[plane]][[dfname]][matching_rows,'Annotation_Label'])),'_'))
+								is_in_phrase = tolower(gsub("'","",interval_label)) %in% current_phrase | interval_label == 'sp'
 
-								time_from_mid <- abs(aaa_data[[sp]][[plane]][[dfname]][matching_rows,'Time_of_sample_in_recording'] - mean(c(interval_xmin,interval_xmax)))
-								time_from_quarter <- abs(aaa_data[[sp]][[plane]][[dfname]][matching_rows,'Time_of_sample_in_recording'] - (interval_xmin + 0.25*(interval_xmax-interval_xmin)))
-								# if (sum(is_this_phone)){
+								# if (sum(na.omit(matches_word))){
 								if (length(matching_rows)){
-									# print (aaa_data[[sp]][[plane]]$tongue_traces[is_this_phone,'Time_of_sample_in_recording'])
-									# print(time_from_mid)
-									# print(c(phone_xmin,phone_xmax))
-									# print(c(mean(c(phone_xmin,phone_xmax)), phone_xmin + 0.5*(phone_xmax-phone_xmin)))
-									# print('***')
-									if (interval_label%in%middle_is_quarter){
-										# mid_frame <- which(is_this_phone)[which(time_from_quarter==min(time_from_quarter))[1]]
-										mid_frame <- matching_rows[which(time_from_quarter==min(time_from_quarter))[1]]
-									}else{
-										# mid_frame <- which(is_this_phone)[which(time_from_mid==min(time_from_mid))[1]]
-										mid_frame <- matching_rows[which(time_from_mid==min(time_from_mid))[1]]
+									if (match_words_to_phrase){
+										if (!is_in_phrase){
+											print (paste('excluding', sum(matching_rows), 'frame(s) of ', tier, 
+												interval_label, 'from phrase', current_phrase))
+											aaa_data[[sp]][[plane]][[dfname]][matching_rows & !is_in_phrase,'exclude'] = TRUE
+										}
 									}
-									aaa_data[[sp]][[plane]][[dfname]][mid_frame,'middle_frame'] <- TRUE
 								}
+							
 
-								if (r>3){
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left2'] = textgrid$phone[r-3,'text']
-								}else{
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left2'] = NA								
-								}
-								if (r>2){
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left1'] = textgrid$phone[r-2,'text']
-								}else{
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left1'] = NA								
-								}
-								if (r>1){
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left'] = textgrid$phone[r-1,'text']
-								}else{
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left'] = NA								
-								}
-								
-								# aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone'] <- phone_label
+							}else if (tier=='phone'){
 
-								if (r<nrow(textgrid$phone)){
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right'] = textgrid$phone[r+1,'text']
-								}else{
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right'] = NA								
-								}
-								if (r<(nrow(textgrid$phone)-1)){
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right1'] = textgrid$phone[r+2,'text']
-								}else{
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right1'] = NA								
-								}
-								if (r<(nrow(textgrid$phone)-2)){
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right2'] = textgrid$phone[r+3,'text']
-								}else{
-									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right2'] = NA								
-								}
+								if (length(matching_rows)){
 
-								# aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone_start'] <- phone_xmin
-								# aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone_end'] <- phone_xmax
-								word_label <- aaa_data[[sp]][[plane]][[dfname]][matching_rows,'word'][1]
-								# print(paste(word_label,phone_label))
-								aaa_data[[sp]][[plane]][[dfname]][matching_rows,'token_id'] <- paste(gsub('\\.TextGrid', '', fn), 1, word_label, interval_label, round(interval_xmin,3),sep='_')
+									time_from_mid <- abs(aaa_data[[sp]][[plane]][[dfname]][matching_rows,'Time_of_sample_in_recording'] - mean(c(interval_xmin,interval_xmax)))
+									time_from_quarter <- abs(aaa_data[[sp]][[plane]][[dfname]][matching_rows,'Time_of_sample_in_recording'] - (interval_xmin + 0.25*(interval_xmax-interval_xmin)))
+									# if (sum(is_this_phone)){
+									if (length(matching_rows)){
+										# print (aaa_data[[sp]][[plane]]$tongue_traces[is_this_phone,'Time_of_sample_in_recording'])
+										# print(time_from_mid)
+										# print(c(phone_xmin,phone_xmax))
+										# print(c(mean(c(phone_xmin,phone_xmax)), phone_xmin + 0.5*(phone_xmax-phone_xmin)))
+										# print('***')
+										if (interval_label%in%middle_is_quarter){
+											# mid_frame <- which(is_this_phone)[which(time_from_quarter==min(time_from_quarter))[1]]
+											mid_frame <- matching_rows[which(time_from_quarter==min(time_from_quarter))[1]]
+										}else{
+											# mid_frame <- which(is_this_phone)[which(time_from_mid==min(time_from_mid))[1]]
+											mid_frame <- matching_rows[which(time_from_mid==min(time_from_mid))[1]]
+										}
+										aaa_data[[sp]][[plane]][[dfname]][mid_frame,'middle_frame'] <- TRUE
+									}
+
+									if (r>3){
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left2'] = textgrid$phone[r-3,'text']
+									}else{
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left2'] = NA								
+									}
+									if (r>2){
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left1'] = textgrid$phone[r-2,'text']
+									}else{
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left1'] = NA								
+									}
+									if (r>1){
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left'] = textgrid$phone[r-1,'text']
+									}else{
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'left'] = NA								
+									}
+									
+									# aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone'] <- phone_label
+
+									if (r<nrow(textgrid$phone)){
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right'] = textgrid$phone[r+1,'text']
+									}else{
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right'] = NA								
+									}
+									if (r<(nrow(textgrid$phone)-1)){
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right1'] = textgrid$phone[r+2,'text']
+									}else{
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right1'] = NA								
+									}
+									if (r<(nrow(textgrid$phone)-2)){
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right2'] = textgrid$phone[r+3,'text']
+									}else{
+										aaa_data[[sp]][[plane]][[dfname]][matching_rows,'right2'] = NA								
+									}
+
+									# aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone_start'] <- phone_xmin
+									# aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone_end'] <- phone_xmax
+									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone_start'] <- interval_xmin
+									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'phone_end'] <- interval_xmax
+									word_label <- aaa_data[[sp]][[plane]][[dfname]][matching_rows,'word'][1]
+									# print(paste(word_label,phone_label))
+									aaa_data[[sp]][[plane]][[dfname]][matching_rows,'token_id'] <- paste(gsub('\\.TextGrid', '', fn), 1, word_label, interval_label, round(interval_xmin,3),sep='_')
+								}
 							}
+							# print(names(aaa_data[[sp]][[plane]]$tongue_traces))
+							# print('a')
+							aaa_data[[sp]][[plane]][[dfname]]$phone_time = with(aaa_data[[sp]][[plane]][[dfname]], (Time_of_sample_in_recording-phone_start)/(phone_end-phone_start))
+							# print('b')
 						}
-						# print(names(aaa_data[[sp]][[plane]]$tongue_traces))
-						aaa_data[[sp]][[plane]][[dfname]]$phone_time = (aaa_data[[sp]][[plane]][[dfname]]$Time_of_sample_in_recording-aaa_data[[sp]][[plane]][[dfname]]$phone_start)/(aaa_data[[sp]][[plane]][[dfname]]$phone_end-aaa_data[[sp]][[plane]][[dfname]]$phone_start)
 					}
 				}
 			}
@@ -956,6 +973,34 @@ measure_traces_at_angles <- function(aaa_data, speakers=NULL, plotting=FALSE){
 		if (plotting){
 			dev.off()
 		}
+	}
+	aaa_data
+}
+
+liparea <- function(lipdatarow){
+	require(pracma)
+	polyarea(lipdatarow[1:8], lipdatarow[9:16])
+}
+
+measure_lips <- function(aaa_data, speakers=NULL, plotting=FALSE){
+
+	if (is.null(speakers)) speakers=names(aaa_data)
+
+	for (sp in speakers){
+		print(sp)
+		plane='video'
+		lipdata = aaa_data[[sp]][[plane]]$lip_traces
+		lipdata$lips_horiz = with(lipdata, rightLip_x-leftLip_x)
+		lipdata$lips_vert = with(lipdata, topmidinner_y-bottommidinner_y)
+		lipdata$lips_purse = with(lipdata, lips_vert / lips_horiz)
+
+
+
+		lipdata$lips_area = apply(lipdata[,c('leftLip_x', 'bottomleftinner_x', 'bottommidinner_x', 'bottomrightinner_x', 'rightLip_x', 'toprightinner_x', 'topmidinner_x', 'topleftinner_x',
+			                                  'leftLip_y', 'bottomleftinner_y', 'bottommidinner_y', 'bottomrightinner_y', 'rightLip_y', 'toprightinner_y', 'topmidinner_y', 'topleftinner_y')], 
+								  1, liparea)
+		
+		aaa_data[[sp]][[plane]]$lip_traces = lipdata
 	}
 	aaa_data
 }
@@ -2735,11 +2780,16 @@ compare_trajectories <- function(aaa_data, sp, plane='sag', signal='TRangle', wo
   xlab=c(0,1)
   ylab = ifelse(signal%in%names(name_of), name_of[[signal]], signal)
   
-  plotdata = aaa_data[[sp]][[plane]]$tongue_traces[aaa_data[[sp]][[plane]]$tongue_traces$word%in%words,]
-  
+  if (plane=='video'){
+  	plotdata = aaa_data[[sp]][[plane]]$lip_traces[aaa_data[[sp]][[plane]]$lip_traces$word%in%words,]
+  }else{
+	plotdata = aaa_data[[sp]][[plane]]$tongue_traces[aaa_data[[sp]][[plane]]$tongue_traces$word%in%words,]
+  }
+  # print(plotdata)
   word_palette = rainbow(length(words), v=0.6, a=0.8)
   
-  ylim=range(plotdata[,signal]) + c(-5, 0)
+  # ylim=range(plotdata[,signal]) + c(-5, 0)
+  ylim=range(plotdata[,signal]) + diff(range(plotdata[,signal]))*c(-0.1,0)
   xlim=c(0,1)
   
   plot(0, 0, type='n', xlim=xlim, ylim=ylim, xlab='relative time', ylab=ylab, main=main)
@@ -2835,7 +2885,6 @@ read_all_dlc_data <- function(speakers, readwritepath=NULL, ultrasound_model_nam
 		ultrasound_times = as.numeric(ultrasound_speaker_times_x[,2])/1000
 		ultrasound_datapoints = all_ultrasound_data[-c(1:3),-1]
 	}
-
 	###########
 
 	if (!is.null(lips_model_name)){
@@ -2852,12 +2901,12 @@ read_all_dlc_data <- function(speakers, readwritepath=NULL, ultrasound_model_nam
 
 	if (!is.null(ultrasound_model_name)){
 		for (speaker in speakers){
-
 			print(paste('Processing ultrasound data for',speaker))
 			# aaa_data[[speaker]] = list(sag=list(),cor=list(),video=list())
 
 			us_colnames = c()
-			tongue_traces = data.frame(image=ultrasound_filenames[ultrasound_speaker==speaker], Time_of_sample_in_recording=ultrasound_times[ultrasound_speaker==speaker])
+			tongue_traces = data.frame(image=ultrasound_filenames[ultrasound_speaker==speaker], 
+				                       Time_of_sample_in_recording=ultrasound_times[ultrasound_speaker==speaker])
 			for (i in 1:ncol(ultrasound_datapoints)){
 				data_name = paste(ultrasound_data_names[1,i],ultrasound_data_names[2,i],sep='_')
 				us_colnames = c(us_colnames, data_name)
@@ -2868,6 +2917,9 @@ read_all_dlc_data <- function(speakers, readwritepath=NULL, ultrasound_model_nam
 			tongue_points = length(tongue_columns)/3
 			tongue_point_numbers = paste0(rep(c('X','Y','C'),tongue_points), sort(rep(c(1:tongue_points),3)))
 			names(tongue_traces)[tongue_columns] = tongue_point_numbers
+			
+			aaa_data[[speaker]]$sag$tongue_traces = tongue_traces
+			aaa_data[[speaker]]$sag$us_colnames = us_colnames
 		}
 	}
 
@@ -2875,15 +2927,13 @@ read_all_dlc_data <- function(speakers, readwritepath=NULL, ultrasound_model_nam
 		for (speaker in speakers){
 			print(paste('Processing lip data for',speaker))
 			video_colnames = c()
-			lip_traces = data.frame(image=video_filenames[video_speaker==speaker], Time_of_sample_in_recording=video_times[video_speaker==speaker])
+			lip_traces = data.frame(image=video_filenames[video_speaker==speaker], 
+				                    Time_of_sample_in_recording=video_times[video_speaker==speaker])
 			for (i in 1:ncol(video_datapoints)){
 				data_name = paste(video_data_names[1,i],video_data_names[2,i],sep='_')
 				video_colnames = c(video_colnames, data_name)
 				lip_traces[,data_name] = as.numeric(paste(video_datapoints[video_speaker==speaker,i]))
 			}
-
-			aaa_data[[speaker]]$sag$tongue_traces = tongue_traces
-			aaa_data[[speaker]]$sag$us_colnames = us_colnames
 
 			aaa_data[[speaker]]$video$lip_traces = lip_traces
 			aaa_data[[speaker]]$video$video_colnames = video_colnames
@@ -2899,6 +2949,7 @@ plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, yli
 
 	pdf(paste0('sample_frames_',label,'.pdf'), height=5, width=6, onefile=TRUE)
 	for (speaker in speakers){
+		print(speaker)
 		if ('tongue_traces' %in% names(aaa_data[[speaker]]$sag)){
 			if (!length(intersect(img,aaa_data[[speaker]]$sag$tongue_traces$image))){
 				sample_trace = aaa_data[[speaker]]$sag$tongue_traces[round(nrow(aaa_data[[speaker]]$sag$tongue_traces)/2),]
@@ -2909,8 +2960,8 @@ plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, yli
 				Xs = as.numeric(sample_trace[,grepl('T[0-9]', names(sample_trace))])
 				Ys = as.numeric(sample_trace[,grepl('R[0-9]', names(sample_trace))])
 			}else{
-				Xs = as.numeric(sample_trace[,grepl('X[0-9]', names(sample_trace))])
-				Ys = as.numeric(sample_trace[,grepl('Y[0-9]', names(sample_trace))])
+				Xs = as.numeric(sample_trace[,grepl('X[0-9]', names(sample_trace))|grepl('_x', names(sample_trace))])
+				Ys = as.numeric(sample_trace[,grepl('Y[0-9]', names(sample_trace))|grepl('_y', names(sample_trace))])
 			}
 			plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'sagittal', label), xlim=xlim, ylim=ylim)
 			if ('origin' %in% names(aaa_data[[speaker]]$sag)){
@@ -2951,9 +3002,13 @@ plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, yli
 			}
 			Xs = as.numeric(sample_trace[,grepl('_x', names(sample_trace))])
 			Ys = as.numeric(sample_trace[,grepl('_y', names(sample_trace))])
-			plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'lips', label), xlim=xlim, ylim=ylim)
-			if ('origin' %in% names(aaa_data[[speaker]]$video)){
-				points(aaa_data[[speaker]]$video$origin[1], aaa_data[[speaker]]$video$origin[2])
+			if(nrow(aaa_data[[speaker]]$video$lip_traces)){
+				plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'lips', label), xlim=xlim, ylim=ylim)
+				if ('origin' %in% names(aaa_data[[speaker]]$video)){
+					points(aaa_data[[speaker]]$video$origin[1], aaa_data[[speaker]]$video$origin[2])
+				}
+			}else{
+				plot(0,0,type='n', main=paste(speaker, 'lips', label), xlim=xlim, ylim=ylim)				
 			}
 		}
 	}
@@ -2968,12 +3023,12 @@ flip_once <- function(aaa_data, speakers=NULL, planes=NULL, ymax=0){
 
 	for (speaker in speakers){
 		if ('sag' %in% planes & 'tongue_traces' %in% names(aaa_data[[speaker]]$sag)){
-			ycols = grepl('Y', names(aaa_data[[speaker]]$sag$tongue_traces))
+			ycols = grepl('Y', names(aaa_data[[speaker]]$sag$tongue_traces))|grepl('_y', names(aaa_data[[speaker]]$sag$tongue_traces))
 			aaa_data[[speaker]]$sag$tongue_traces[,ycols] = ymax - aaa_data[[speaker]]$sag$tongue_traces[,ycols]
 		}
 
 		if ('cor' %in% planes & 'tongue_traces' %in% names(aaa_data[[speaker]]$cor)){
-			ycols = grepl('Y', names(aaa_data[[speaker]]$cor$tongue_traces))
+			ycols = grepl('Y', names(aaa_data[[speaker]]$cor$tongue_traces))|grepl('_y', names(aaa_data[[speaker]]$sag$tongue_traces))
 			aaa_data[[speaker]]$cor$tongue_traces[,ycols] = ymax - aaa_data[[speaker]]$cor$tongue_traces[,ycols]
 		}
 		
@@ -2985,3 +3040,26 @@ flip_once <- function(aaa_data, speakers=NULL, planes=NULL, ymax=0){
 	aaa_data
 }
 
+
+find_tongue_point_density <- function(speakers=NULL, us_data, xn, yn, scale=1, phones=NULL){
+
+	require(MASS)
+
+	tongue_point_density = list()
+
+	for (sp in speakers){
+		traces = us_data[[sp]]$sag$tongue_traces
+		if (!is.null(phones)){
+			traces = subset(traces, phone %in% phones)
+		}
+		print(paste(sp, nrow(traces)))
+		x=c()
+		y=c()
+		for (i in 1:11){
+		    x = c(x, traces[,paste0('X',i)])
+		    y = c(y, traces[,paste0('Y',i)])
+		}
+		tongue_point_density[[sp]] = kde2d(x*scale, y*scale, n = c(xn*scale, yn*scale))
+	}
+	tongue_point_density
+}

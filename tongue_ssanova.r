@@ -231,6 +231,12 @@ select.origin <- function(Xs, Ys, tokens, method='xmean_ymin', flip){
         }else{
             return(c(as.numeric(quantile(Xs, 0.975)), as.numeric(quantile(Ys, 0.025))))
         }
+    }else if (method=='x75_y025'){
+        if (flip){
+            return(c(as.numeric(quantile(Xs, 0.75)), as.numeric(quantile(Ys, 0.975))))
+        }else{
+            return(c(as.numeric(quantile(Xs, 0.75)), as.numeric(quantile(Ys, 0.025))))
+        }
     }else if (method=='yextremes'){
         if (mean(Ys)>0){
             return(c(mean(Xs[which(Ys==min(Ys))]), max(Ys)*1.01))
