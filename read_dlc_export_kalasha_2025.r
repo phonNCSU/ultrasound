@@ -56,10 +56,10 @@ speakers = c('Dame1', 'Dame2', 'Dame4', 'Dame5', 'Dame6', 'Kal1', 'Kal4', 'Kal5'
 	'Kami3', 'Kati1', 'Kati2', 'Kati3', 'Kati4', 'Kati7', 'Khow1', 'Khow2', 'Khow3', 'Khow4', 
 	'Palu1', 'Palu2', 'Palu3', 'Palu4', 'Shin1', 'Shin2', 'Shin3', 'Shin4', 'Shin5')
 
-radii_filename = c('K25_analysis_value_radii.csv')
+# radii_filename = c('K25_analysis_value_radii.csv')
 
-xlim=c(0,320)
-ylim=c(0,240)
+image_xlim=c(0,320)
+image_ylim=c(0,240)
 
 # LOOP THROUGH ALL YOUR (ONE) SPEAKER(S) AND LOAD THEIR DATA
 # THE RESULT IS A COMPLEX LIST STRUCTURE, WITH AN ENTRY FOR EACH SPEAKER, AND EACH PLANE (sagittal, coronal, video, if applicable).
@@ -75,12 +75,135 @@ ylim=c(0,240)
 # STEP 1: read the raw coordinates from the file
 # us_data = read_all_dlc_data(speakers, readwritepath=readwritepath, ultrasound_model_name = 'all_small_us_pngsDLC_mobnet_100_SpeechProductionFeb12shuffle2_800000',
 	# lips_model_name = 'all_video_pngsDLC_mobnet_100_Tal_LipsJan28shuffle2_800000')
-us_data = read_all_dlc_data(speakers, readwritepath=readwritepath, ultrasound_model_name = 'all_small_us_pngsDLC_mobnet_100_SpeechProductionFeb12shuffle1_1030000',
-	lips_model_name = 'all_video_pngsDLC_mobnet_100_Tal_LipsJan28shuffle1_1030000')
-save(us_data, file='K25_dlc_2025_01_20.RData')
-# load('K25_dlc_2025_01_20.RData')
-plot_sample_frames(us_data, label='read_all_dlc_data', xlim=xlim, ylim=ylim)
+us_data = read_all_dlc_data(speakers, readwritepath=readwritepath, ultrasound_model_name = 'all_small_us_pngsDLC_mobnet_100_SpeechProductionFeb12shuffle1_1030000_retrained_Feb2025',
+	lips_model_name = 'all_video_pngsDLC_mobnet_100_Tal_LipsJan28shuffle1_1030000_retrained_Feb2025')
+save(us_data, file='K25_dlc_2025_03_24.RData')
+# load('K25_dlc_2025_03_24.RData')
+plot_sample_frames(us_data, label='read_all_dlc_data', xlim=image_xlim, ylim=image_ylim)
 ###########################################################################################################################################
+
+
+###########################################################################################################################################
+# READ TEXTGRIDS AND ADD TO THE ARTICULATORY DATA
+us_data = add_textgrid_segmentation(speakers=speakers, us_data, planes=c('sag','video'), tiers=c('phone','word'), match_words_to_phrase=FALSE, 
+	one_folder='/home/jimielke/Kalasha/analysis_2025/dlc/textgrids')
+
+save(us_data, file='K25_dlc_2025_03_24_step_one_with_textgrids.RData')
+# load('K25_dlc_2025_03_24_step_one_with_textgrids.RData')
+###########################################################################################################################################
+
+
+
+###########################################################################################################################################
+# NEW STEP: flip tongue and lip traces
+us_data = flip_once(us_data, planes=c('sag','video'), ymax=max(image_ylim))
+plot_sample_frames(us_data, label='flip_once', xlim=image_xlim, ylim=image_ylim)
+###########################################################################################################################################
+
+
+###########################################################################################################################################
+# READ PALATE TRACES AND OCCLUSAL ANGLES (CREATED MANUALLY SINCE DLC DOESN'T DO THESE WELL)
+# NEW STEP: scale and flip palate traces
+# STEP 2: rotate only the palate and occlusal plane
+# us_data = add_manual_pal_occ(us_data, palate_filepath=paste0(readwritepath,'/','shiny_palate_traces_2025Feb20_14h27s49.csv'), 
+# 	occlusal_filepath='cr_occlusal_angles.csv', palate_scale=1)
+source(paste0(scriptpath,'read_ultrasound_functions.r'))
+us_data = add_manual_pal_occ(us_data, palate_filepath=paste0(readwritepath,'/','palate_app/shiny_palate_traces_2025Jan30_16h23s44.csv'), 
+	occlusal_filepath=paste0(readwritepath,'/','palate_app/shiny_occlusal_traces_2025Jan25_10h31s15.csv'), measure_occlusal=TRUE, palate_scale=1)
+
+# plot_pal_occ(us_data, planes='sag', xlim=image_xlim, ylim=image_ylim, center=c(mean(image_xlim),mean(image_ylim)))
+plot_sample_frames(us_data, label='read_palate', xlim=image_xlim, ylim=image_ylim, palate='palate_trace')
+###########################################################################################################################################
+
+source(paste0(scriptpath,'read_ultrasound_functions.r'))
+
+###########################################################################################################################################
+# STEP 2.9: rotate traces to occlusal plane (overwriting raw traces)
+us_data = xy2occlusal(us_data, center=c(mean(image_xlim),mean(image_ylim)), rotate_palate=TRUE)
+
+# xlim_ultrasound = c(-3.9, 10)
+# ylim_ultrasound = c(-2.4, 6.9)
+
+plot_sample_frames(us_data, label='rotate_to_occlusal', xlim=image_xlim, ylim=image_ylim, palate='palate_trace')
+   
+# us_data = choose_polar_origin(us_data, method='xmean_y025')
+# plot_sample_frames(us_data, label='choose_polar_origin', xlim_ultrasound=xlim_ultrasound, ylim_ultrasound=ylim_ultrasound, xlim_video=xlim_video, ylim_video=ylim_video, palate='palate_trace')
+###########################################################################################################################################
+
+
+
+
+
+###########################################################################################################################################
+# SCALE TO CM, ALL X AND Y COLUMNS AND PALATE
+us_data = scale_to_cm(us_data, depths_filepath='/home/jimielke/Kalasha/analysis_2025/dlc/K25_depths.csv')
+
+xlim_ultrasound = c(-5.5, 11.6)
+ylim_ultrasound = c(-2.9, 8.5)
+xlim_video = c(-6.4, 5.6)
+ylim_video = c(-4.4, 3.6)
+
+source(paste0(scriptpath,'read_ultrasound_functions.r'))
+plot_sample_frames(us_data, label='scaled_to_cm', xlim_ultrasound=xlim_ultrasound, ylim_ultrasound=ylim_ultrasound, xlim_video=xlim_video, ylim_video=ylim_video, palate='palate_trace')
+###########################################################################################################################################
+       
+
+
+###########################################################################################################################################
+# STEP 3: make polar (storing rotated XY traces in the tongue_traces data frame as TR instead of XY)
+us_data = choose_polar_origin(us_data, method='shortTendon')
+us_data = xy2polar(us_data)
+plot_sample_frames(us_data, label='xy2polar', xlim_ultrasound=xlim_ultrasound, ylim_ultrasound=ylim_ultrasound, xlim_video=xlim_video, ylim_video=ylim_video, polar=TRUE)
+###########################################################################################################################################
+
+###########################################################################################################################################
+# STEP xxx: make lip signals
+us_data = measure_lips(us_data)
+###########################################################################################################################################
+
+
+save(us_data, file='K25_dlc_2025_04_02_processed.RData')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###########################################################################################################################################
+# STEP xxx: make lip signals
+us_data = measure_lips(us_data)
+###########################################################################################################################################
+
+
+# lips_widths = c()
+# for (sp in speakers){
+# 	if (nrow(us_data[[sp]]$video$lip_traces)){
+# 		lips_widths = c(lips_widths, mean(us_data[[sp]]$video$lip_traces$lips_horiz))
+# 	}
+# }
+
+# mean(lips_widths)
+# [1] 144.3904
+# > 50.1/144.3904
+# [1] 0.346976
+# mmperpixels 0.346976
+
+###########################################################################################################################################
+###########################################################################################################################################
+###########################################################################################################################################
+###########################################################################################################################################
+###########################################################################################################################################
+
+
+
 
 
 tongue_point_density = find_tongue_point_density(speakers, us_data, xn=xlim[2], yn=ylim[2])

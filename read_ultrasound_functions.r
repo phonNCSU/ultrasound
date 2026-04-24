@@ -58,6 +58,94 @@ aaa2ssanova <- function(data_wide, thetas){
 
 	data_long
 }
+parse_aaa_export_2025 <- function(export_filename){
+
+	# read the AAA export file and format in a way that we can work with. 
+	# returns a data frame still in wide format
+
+	# read the txt file and separate the header from the data. 
+	# The header doesn't have as many columns as there are columns of data
+	# because many headers are for 42 or 84 columns of data
+
+	# THIS IS BECAUSE THE DEFAULT FILENAME EXTENSION CHANGED TO tsv AS OF 2025
+	if (!file.exists(export_filename)){
+		export_filename_tsv = gsub('.txt','.tsv',export_filename,fixed=TRUE)
+		print(export_filename_tsv)
+		if (file.exists(export_filename_tsv)){
+			export_filename = export_filename_tsv
+		}
+	}		
+
+	if (file.exists(export_filename)){
+		print (paste('reading',export_filename_tsv))
+		aaa_raw_data <- read.table(export_filename, sep='\t', quote="", fill=TRUE, header=FALSE, comment.char="") #comment.char="" allows it to read past the # in Sequence #
+		aaa_raw_header <- paste(aaa_raw_data[1,!is.na(aaa_raw_data[1,])])
+		aaa_data <- aaa_raw_data[2:nrow(aaa_raw_data),]
+
+		found_columns <- ncol(aaa_data)
+		print('RAW HEADER')
+		print(aaa_raw_header)
+		aaa_new_header = aaa_raw_header
+		# TEMPORARY HACK TO REPLACE THE HEADER WITH THE LAPTOP-STYLE HEADER
+		aaa_new_header = gsub('Client family name', 'Client Surname', aaa_new_header)
+		aaa_new_header = gsub('Date Time of recording', 'Date and time of recording', aaa_new_header)
+		aaa_new_header = gsub('Annotation Title', 'Annotation Label', aaa_new_header)
+		aaa_new_header = gsub('Sequence_#', 'Sequence number', aaa_new_header)
+
+		aaa_new_header = gsub(' DLC_Tongue', '', aaa_new_header)
+
+		aaa_new_header = gsub('X0 DLC_HyoidMandible', 'hyoid_x', aaa_new_header)
+		aaa_new_header = gsub('Y0 DLC_HyoidMandible', 'hyoid_y', aaa_new_header)
+
+		aaa_new_header = gsub('X1 DLC_HyoidMandible', 'mandible_x', aaa_new_header)
+		aaa_new_header = gsub('Y1 DLC_HyoidMandible', 'mandible_y', aaa_new_header)
+
+		aaa_new_header = gsub('X0 DLC_ShorttendonMandible', 'shortTendon_x', aaa_new_header)
+		aaa_new_header = gsub('Y0 DLC_ShorttendonMandible', 'shortTendon_y', aaa_new_header)
+
+		aaa_new_header = gsub('X1 DLC_ShorttendonMandible', 'mandible2_x', aaa_new_header)
+		aaa_new_header = gsub('Y1 DLC_ShorttendonMandible', 'mandible2_y', aaa_new_header)
+
+		print('NEW HEADER')
+		print(aaa_new_header)
+		
+		aaa_header = aaa_new_header
+		aaa_header <- gsub(' ', '_', aaa_header)
+		colnames(aaa_data) <- aaa_header
+
+		# reconcile mandibles
+
+		if ('mandible2_x' %in% aaa_header){
+			if ('mandible_x' %in% aaa_header){
+				aaa_data$mandible2_x = NULL
+				aaa_data$mandible2_y = NULL
+			}else{
+				names(aaa_data) = gsub('mandible2','mandible',names(aaa_data))
+			}
+		}
+		
+		# make data numeric (which it wasn't originally because of the header row)
+		xy_columns = which(grepl('^[XY][0-9]', names(aaa_data)) | grepl('_[xy]$', names(aaa_data)))
+		for (xy_column in xy_columns){
+			aaa_data[,xy_column] <- as.numeric(paste(aaa_data[,xy_column]))
+		}
+
+		# format the date and time columns
+		aaa_data$Time_of_sample_in_recording <- as.numeric(paste(aaa_data$Time_of_sample_in_recording))
+		aaa_data$date_time <- strptime(paste(aaa_data$Date_and_time_of_recording), format='%m/%d/%Y %H:%M:%S %p')
+
+		# sort by recording time and then by time in recording
+		aaa_data <- aaa_data[order(aaa_data$Time_of_sample_in_recording),]
+		aaa_data <- aaa_data[order(aaa_data$date_time),]
+
+	}else{
+		print (paste('did not find',export_filename))
+		print (' (this is only a problem if you expected to have this type of data)')
+		aaa_data <- NULL
+	}
+
+	aaa_data
+}
 
 parse_aaa_export <- function(export_filename){
 
@@ -68,8 +156,17 @@ parse_aaa_export <- function(export_filename){
 	# The header doesn't have as many columns as there are columns of data
 	# because many headers are for 42 or 84 columns of data
 
+	# THIS IS BECAUSE THE DEFAULT FILENAME EXTENSION CHANGED TO tsv AS OF 2025
+	if (!file.exists(export_filename)){
+		export_filename_tsv = gsub('.txt','.tsv',export_filename,fixed=TRUE)
+		print(export_filename_tsv)
+		if (file.exists(export_filename_tsv)){
+			export_filename = export_filename_tsv
+		}
+	}		
+
 	if (file.exists(export_filename)){
-		print (paste('reading',export_filename))
+		print (paste('reading',export_filename_tsv))
 		aaa_raw_data <- read.table(export_filename, sep='\t', quote="", fill=TRUE, header=FALSE)
 		aaa_raw_header <- paste(aaa_raw_data[1,!is.na(aaa_raw_data[1,])])
 		aaa_data <- aaa_raw_data[2:nrow(aaa_raw_data),]
@@ -80,13 +177,13 @@ parse_aaa_export <- function(export_filename){
 		aaa_raw_header = gsub('Client family name', 'Client Surname', aaa_raw_header)
 		aaa_raw_header = gsub('Date Time of recording', 'Date and time of recording', aaa_raw_header)
 		aaa_raw_header = gsub('Annotation Title', 'Annotation Label', aaa_raw_header)
-    if ('Sequence ' %in% aaa_raw_header){
-      aaa_raw_header[aaa_raw_header=='Sequence '] = 'Sequence number'
-    }
+	    if ('Sequence ' %in% aaa_raw_header){
+	      aaa_raw_header[aaa_raw_header=='Sequence '] = 'Sequence number'
+	    }
 		
 		# aaa_raw_header = gsub('Sequence ', 'Sequence number', aaa_raw_header)
 		# aaa_raw_header = gsub('DLC_Tongue has no radius(%)', 'R% values of spline \"DLC_Tongue\"', aaa_raw_header)
-    # aaa_raw_header = gsub('X0 DLC_Tongue	Y0 DLC_Tongue	X1 DLC_Tongue	Y1 DLC_Tongue	X2 DLC_Tongue	Y2 DLC_Tongue	X3 DLC_Tongue	Y3 DLC_Tongue	X4 DLC_Tongue	Y4 DLC_Tongue	X5 DLC_Tongue	Y5 DLC_Tongue	X6 DLC_Tongue	Y6 DLC_Tongue	X7 DLC_Tongue', 'X,Y values of spline \"DLC_Tongue\"', aaa_raw_header)
+    	# aaa_raw_header = gsub('X0 DLC_Tongue	Y0 DLC_Tongue	X1 DLC_Tongue	Y1 DLC_Tongue	X2 DLC_Tongue	Y2 DLC_Tongue	X3 DLC_Tongue	Y3 DLC_Tongue	X4 DLC_Tongue	Y4 DLC_Tongue	X5 DLC_Tongue	Y5 DLC_Tongue	X6 DLC_Tongue	Y6 DLC_Tongue	X7 DLC_Tongue', 'X,Y values of spline \"DLC_Tongue\"', aaa_raw_header)
 		# aaa_raw_header = c(aaa_raw_header, 'R% values of spline \"DLC_Tongue\"', 'X,Y values of spline \"DLC_Tongue\"', 'Confidence values of spline \"DLC_Tongue\"')
 		# aaa_raw_header = c(aaa_raw_header, 'X,Y values of spline \"DLC_Tongue\"', 'Confidence values of spline \"DLC_Tongue\"')
 		aaa_raw_header = c(aaa_raw_header, 'X,Y values of spline \"DLC_Tongue\"')
@@ -288,7 +385,9 @@ parse_aaa_pal_occ <- function(pal_occ_filepath){
 }
 
 
-add_manual_pal_occ <- function(aaa_data, palate_filepath=NULL, occlusal_filepath=NULL, palate_scale=1, flip=TRUE, xmax=320, ymax=240){
+add_manual_pal_occ <- function(aaa_data, palate_filepath=NULL, occlusal_filepath=NULL, measure_occlusal=FALSE, palate_scale=1, flip=TRUE, xmax=320, ymax=240){
+
+	# until 4/1/25 this function rotated the palate, but now we wait until we are ready to rotate the traces
 
 	if (!is.null(palate_filepath)){
 		print(paste('preparing to read from',palate_filepath))
@@ -307,15 +406,41 @@ add_manual_pal_occ <- function(aaa_data, palate_filepath=NULL, occlusal_filepath
 			all_occlusal_angles = read.csv(occlusal_filepath)
 	}
 
-	rotate_center = c(xmax/2,ymax/2)
+	# rotate_center = c(xmax/2,ymax/2)
 
 	for (sp in names(aaa_data)){
-		aaa_data[[sp]]$sag$occlusal_angle = all_occlusal_angles[all_occlusal_angles$speaker==sp,'occlusal_angle']
+
+		if (measure_occlusal){
+			all_occlusal_traces = all_occlusal_angles
+
+			occlusal_trace = all_occlusal_traces[all_occlusal_traces$speaker==sp,c('x','y')]
+
+			occlusal_trace$x <- as.numeric(occlusal_trace$x)
+			occlusal_trace$y <- -as.numeric(occlusal_trace$y)
+
+			if (nrow(occlusal_trace)>0){
+				occlusal_lm <- lm(y~x,occlusal_trace)
+				occlusal_angle <- 180*atan(coef(occlusal_lm)[2])/pi
+			}else{
+				occlusal_lm = NA
+				occlusal_angle = -20
+			}
+
+			# print (sp)
+			# print (occlusal_lm)
+			# print (occlusal_angle)
+			aaa_data[[sp]]$sag$occlusal_angle = occlusal_angle
+
+
+		}else{
+			aaa_data[[sp]]$sag$occlusal_angle = all_occlusal_angles[all_occlusal_angles$speaker==sp,'occlusal_angle']
+		}
+
 		palate_trace = all_palate_traces[all_palate_traces$speaker==sp,c('x','y')]
 		names(palate_trace) = c('X','Y')
 		aaa_data[[sp]]$sag$palate_trace = palate_trace
-		print(paste0(sp,': rotating counterclockwise ',aaa_data[[sp]]$sag$occlusal_angle,' degrees around (',rotate_center[1],',',rotate_center[2],')'))
-		aaa_data[[sp]]$sag$palate_trace_rotated = rotateXY(aaa_data[[sp]]$sag$palate_trace, aaa_data[[sp]]$sag$occlusal_angle, center=rotate_center)
+		# print(paste0(sp,': rotating clockwise ',aaa_data[[sp]]$sag$occlusal_angle,' degrees around (',rotate_center[1],',',rotate_center[2],')'))
+		# aaa_data[[sp]]$sag$palate_trace_rotated = rotateXY(aaa_data[[sp]]$sag$palate_trace, aaa_data[[sp]]$sag$occlusal_angle, center=rotate_center)
 	}
 
 	aaa_data
@@ -412,7 +537,7 @@ read_cl_export <- function(){
 # CL-specific functions I put here when simplifying starting 2-9-22
 #########################################################################
 
-read_all_aaa_data <- function(speakers, aaa_data=list(), planes=c('sag'), offset=NULL, center=c(0,0)){
+read_all_aaa_data <- function(speakers, aaa_data=list(), planes=c('sag'), offset=NULL, center=c(0,0), export_style='modern'){
 
 	for (sp in speakers){
 		print(sp)
@@ -424,8 +549,12 @@ read_all_aaa_data <- function(speakers, aaa_data=list(), planes=c('sag'), offset
 			export_filepath <- paste0(readwritepath, sp, '_', plane, '_tongues.txt')
 			pal_occ_filepath <- paste0(readwritepath,sp,'_', plane, '_pal_occ.txt')
 
-			aaa_data[[sp]][[plane]][['tongue_traces']] = parse_aaa_export(export_filepath)
-
+			if (export_style=='legacy'){
+				aaa_data[[sp]][[plane]][['tongue_traces']] = parse_aaa_export(export_filepath)
+			}else{
+				aaa_data[[sp]][[plane]][['tongue_traces']] = parse_aaa_export_2025(export_filepath)
+			}
+			
 			pal_occ = parse_aaa_pal_occ(pal_occ_filepath)
 
 			aaa_data[[sp]][[plane]][['palate_trace']] <- pal_occ$palate_trace
@@ -461,6 +590,7 @@ read_all_aaa_data <- function(speakers, aaa_data=list(), planes=c('sag'), offset
 			}
 		
 			aaa_data[[sp]][[plane]]$tongue_traces$token <- NA
+			print('unique labels found in annotations:')
 			for (unique_label in unique(aaa_data[[sp]][[plane]]$tongue_traces$Annotation_Label)){
 				print(unique_label)
 				date_times <- subset(aaa_data[[sp]][[plane]]$tongue_traces, Annotation_Label==unique_label)$Date_and_time_of_recording
@@ -597,23 +727,38 @@ add_textgrid_segmentation <- function(aaa_data, speakers=NULL, merge_vl=FALSE, p
 					textgrid$phone = textgrid$phone[-postvocalic_liquids,]
 				}
 			}
-
+			# print(textgrid$phone)
 			# print (txt_info)
 			for (plane in planes){
 				dfname = ifelse(plane=='video', 'lip_traces', 'tongue_traces')
 				if (nrow(aaa_data[[sp]][[plane]][[dfname]])){
 
-					if(is.na(txt_date_time)){
-						rownumbers_for_textgrid = 1:nrow(aaa_data[[sp]][[plane]][[dfname]])
-					}else{
+					# print(names(aaa_data[[sp]][[plane]][[dfname]]))
+					# print(txt_date_time)
+					if ('Date_and_time_of_recording' %in% names(aaa_data[[sp]][[plane]][[dfname]]) & !is.na(txt_date_time)){
 						rownumbers_for_textgrid = which(aaa_data[[sp]][[plane]][[dfname]]$Date_and_time_of_recording==txt_date_time)
+						print(paste('matched textgrid to',plane,'using date and time'))
+						# print(rownumbers_for_textgrid)
+						# print(txt_date_time)
+					}else if('clip_name' %in% names(aaa_data[[sp]][[plane]][[dfname]])){
+						clip_name_from_filename = gsub(paste0('export_',sp,'_'),'',gsub('_Track0.TextGrid','',fn))
+						rownumbers_for_textgrid = which(aaa_data[[sp]][[plane]][[dfname]]$clip_name==clip_name_from_filename)
+						print(paste('matched textgrid to',plane,'clip name'))
+						# print(plane)
+						# print(rownumbers_for_textgrid)
+						# print(clip_name_from_filename)
+					}else{
+						rownumbers_for_textgrid = 1:nrow(aaa_data[[sp]][[plane]][[dfname]])
+						print(paste('unable to match textgrid to',plane,'using date and time or clip name'))
 					}
 
 					rows_for_textgrid = aaa_data[[sp]][[plane]][[dfname]][rownumbers_for_textgrid,]
 
 					for (tier in tiers){
-
+						print(tier)
+						all_matching_rows_ever = c()
 						for (r in 1:nrow(textgrid[[tier]])){
+
 
 							if (!r%%1000){
 								print(paste0(plane,': processing ',tier,' tier interval ',r,' of ',nrow(textgrid[[tier]])))
@@ -730,6 +875,8 @@ add_textgrid_segmentation <- function(aaa_data, speakers=NULL, merge_vl=FALSE, p
 							aaa_data[[sp]][[plane]][[dfname]]$phone_time = with(aaa_data[[sp]][[plane]][[dfname]], (Time_of_sample_in_recording-phone_start)/(phone_end-phone_start))
 							# print('b')
 						}
+
+					# print (aaa_data[[sp]][[plane]][[dfname]][,paste(tier,'start',sep='_')])	
 					}
 				}
 			}
@@ -739,16 +886,21 @@ add_textgrid_segmentation <- function(aaa_data, speakers=NULL, merge_vl=FALSE, p
 }
 
 traces_wide_to_long <- function(tongue_data_wide, occlusal_angle=NULL, center=c(0,0), factors_to_retain=c('left','phone','right','word'), fast=FALSE, polar=FALSE){
+
+	tongue_data_wide = tongue_data_wide[,!grepl('hyoid',names(tongue_data_wide))]
+	tongue_data_wide = tongue_data_wide[,!grepl('mandible',names(tongue_data_wide))]
+	tongue_data_wide = tongue_data_wide[,!grepl('shortTendon',names(tongue_data_wide))]
+
 	tongue_data_long <- c()
 	columns_to_retain <- c('Annotation_Label','token','token_id','Time_of_sample_in_recording', factors_to_retain)
 	
 	if (fast){
 		if (polar){
-			tongue_data_long = data.frame(X=as.numeric(unlist(tongue_data_wide[,grepl('^T[0-9]',names(tongue_data_wide))])), 
-					                      Y=as.numeric(unlist(tongue_data_wide[,grepl('^R[0-9]',names(tongue_data_wide))])))
+			tongue_data_long = data.frame(X=as.numeric(unlist(tongue_data_wide[,grepl('^T[0-9]',names(tongue_data_wide))|grepl('_t$',names(tongue_data_wide))])), 
+					                      Y=as.numeric(unlist(tongue_data_wide[,grepl('^R[0-9]',names(tongue_data_wide))|grepl('_r$',names(tongue_data_wide))])))
 		}else{
-			tongue_data_long = data.frame(X=as.numeric(unlist(tongue_data_wide[,grepl('^X[0-9]',names(tongue_data_wide))])), 
-					                      Y=as.numeric(unlist(tongue_data_wide[,grepl('^Y[0-9]',names(tongue_data_wide))])))
+			tongue_data_long = data.frame(X=as.numeric(unlist(tongue_data_wide[,grepl('^X[0-9]',names(tongue_data_wide))|grepl('_x$',names(tongue_data_wide))])), 
+					                      Y=as.numeric(unlist(tongue_data_wide[,grepl('^Y[0-9]',names(tongue_data_wide))|grepl('_y$',names(tongue_data_wide))])))
 		}
 	}else{
 		for(i in 1:nrow(tongue_data_wide)){
@@ -758,13 +910,14 @@ traces_wide_to_long <- function(tongue_data_wide, occlusal_angle=NULL, center=c(
 			token_data_frame <- tongue_data_wide[i,intersect(columns_to_retain, colnames(tongue_data_wide))]
 			rownames(token_data_frame) <- NULL
 			if (polar){
-				token_data_frame_XY <- data.frame(X=as.numeric(paste(tongue_data_wide[i,grepl('^T[0-9]',names(tongue_data_wide))])), 
-					                              Y=as.numeric(paste(tongue_data_wide[i,grepl('^R[0-9]',names(tongue_data_wide))])))
+				token_data_frame_XY <- data.frame(X=as.numeric(paste(tongue_data_wide[i,grepl('^T[0-9]',names(tongue_data_wide))|grepl('_t$',names(tongue_data_wide))])), 
+					                              Y=as.numeric(paste(tongue_data_wide[i,grepl('^R[0-9]',names(tongue_data_wide))|grepl('_r$',names(tongue_data_wide))])))
 			}else{
-				token_data_frame_XY <- data.frame(X=as.numeric(paste(tongue_data_wide[i,grepl('^X[0-9]',names(tongue_data_wide))])), 
-					                              Y=as.numeric(paste(tongue_data_wide[i,grepl('^Y[0-9]',names(tongue_data_wide))])))
+				token_data_frame_XY <- data.frame(X=as.numeric(paste(tongue_data_wide[i,grepl('^X[0-9]',names(tongue_data_wide))|grepl('_x$',names(tongue_data_wide))])), 
+					                              Y=as.numeric(paste(tongue_data_wide[i,grepl('^Y[0-9]',names(tongue_data_wide))|grepl('_y$',names(tongue_data_wide))])))
 			}
-			
+			# print(grepl('^X[0-9]',names(tongue_data_wide))|grepl('_x',names(tongue_data_wide)))
+			# print(tongue_data_wide)
 			tongue_data_long <- rbind(tongue_data_long, cbind(token_data_frame, token_data_frame_XY))
 		}
 
@@ -809,34 +962,46 @@ choose_polar_origin <- function(aaa_data, method='xmid_ymid', speakers=NULL, pla
 
 	for (sp in speakers){
 		for (plane in planes){
-			# if ('Annotation_Label' %in% names(aaa_data[[sp]][[plane]]$tongue_traces)){
-			#use the same polar origin for all comparisons and the same axis ranges for all the plots
-			# tongue_data_wide <- subset(aaa_data[[sp]][[plane]]$tongue_traces, middle_frame==TRUE)
-			tongue_data_wide <- subset(aaa_data[[sp]][[plane]]$tongue_traces)
-			# occlusal_angle = aaa_data[[sp]][[plane]]$occlusal_angle
-			tongue_data_long = traces_wide_to_long(tongue_data_wide, fast=TRUE)
-			polar_origin <- select.origin(tongue_data_long$X, tongue_data_long$Y, 
-										  tongue_data_long$token_id, method=method, flip=flip)
-			aaa_data[[sp]][[plane]]$origin <- polar_origin
-			# }
+
+			if (method=='shortTendon'){
+				aaa_data[[sp]][[plane]]$origin = c(median(aaa_data[[sp]][[plane]]$tongue_traces$shortTendon_x),
+					                               median(aaa_data[[sp]][[plane]]$tongue_traces$shortTendon_y))
+			}else{
+				# if ('Annotation_Label' %in% names(aaa_data[[sp]][[plane]]$tongue_traces)){
+				#use the same polar origin for all comparisons and the same axis ranges for all the plots
+				# tongue_data_wide <- subset(aaa_data[[sp]][[plane]]$tongue_traces, middle_frame==TRUE)
+				tongue_data_wide <- subset(aaa_data[[sp]][[plane]]$tongue_traces)
+				# occlusal_angle = aaa_data[[sp]][[plane]]$occlusal_angle
+				tongue_data_long = traces_wide_to_long(tongue_data_wide, fast=TRUE)
+				polar_origin <- select.origin(tongue_data_long$X, tongue_data_long$Y, 
+											  tongue_data_long$token_id, method=method, flip=flip)
+				aaa_data[[sp]][[plane]]$origin <- polar_origin
+				# }
+			}
 		}
 	}
 	aaa_data
 }
 
-xy2occlusal <- function(aaa_data, speakers=NULL, replaceXY=TRUE, planes=c('sag'), flip=FALSE, center=c(0,0)){
+xy2occlusal <- function(aaa_data, speakers=NULL, replaceXY=TRUE, planes=c('sag'), flip=FALSE, center=c(0,0), rotate_palate=TRUE){
 
 	if (is.null(speakers)) speakers=names(aaa_data)
 
+	complete_us_xrange = c()
+	complete_us_yrange = c()
+
 	for (sp in speakers){
 		print(sp)
+		tongue_xcols = names(us_data[[sp]]$sag$tongue_traces)[grepl('X[0-9]', names(us_data[[sp]]$sag$tongue_traces))|grepl('_x', names(us_data[[sp]]$sag$tongue_traces))]
+		tongue_ycols = names(us_data[[sp]]$sag$tongue_traces)[grepl('Y[0-9]', names(us_data[[sp]]$sag$tongue_traces))|grepl('_y', names(us_data[[sp]]$sag$tongue_traces))]
+
 		for (plane in planes){
 			point_colnames = names(aaa_data[[sp]][[plane]]$tongue_traces)[grepl('_[xy]$',names(aaa_data[[sp]][[plane]]$tongue_traces))|grepl('^[XY][0-9]',names(aaa_data[[sp]][[plane]]$tongue_traces))]
 			tongue_data_wide = aaa_data[[sp]][[plane]]$tongue_traces[,point_colnames]
 
 			for (i in seq(1,length(point_colnames),2)){
 				one_radius_raw = data.frame(X=tongue_data_wide[,i], Y=tongue_data_wide[,i+1])
-				one_radius_rotated <- rotateXY(one_radius_raw, aaa_data[[sp]][[plane]]$occlusal_angle, center=center)
+				one_radius_rotated <- rotateXY(one_radius_raw, as.numeric(aaa_data[[sp]][[plane]]$occlusal_angle), center=center)
 				if (i==1){
 					aaa_data[[sp]][[plane]]$tongue_traces_rotated = one_radius_rotated
 					names(aaa_data[[sp]][[plane]]$tongue_traces_rotated) = point_colnames[1:2]
@@ -849,8 +1014,44 @@ xy2occlusal <- function(aaa_data, speakers=NULL, replaceXY=TRUE, planes=c('sag')
 				aaa_data[[sp]][[plane]]$tongue_traces[,point_colnames] = aaa_data[[sp]][[plane]]$tongue_traces_rotated
 				aaa_data[[sp]][[plane]]$tongue_traces_rotated = NULL
 			}		
+
+
+			if (rotate_palate){
+				# rotate_center = c(xmax/2,ymax/2)
+				print(paste('angle = ',aaa_data[[sp]]$sag$occlusal_angle))
+				print(paste0(sp,': rotating clockwise ',aaa_data[[sp]]$sag$occlusal_angle,' degrees around (',center[1],',',center[2],')'))
+				aaa_data[[sp]]$sag$palate_trace = rotateXY(aaa_data[[sp]]$sag$palate_trace, aaa_data[[sp]]$sag$occlusal_angle, center=center)
+			}
+
+			us_xrange = range(c(us_data[[sp]]$sag$tongue_traces[,tongue_xcols], us_data[[sp]]$sag$palate_trace$X), na.rm=TRUE)
+			us_yrange = range(c(us_data[[sp]]$sag$tongue_traces[,tongue_ycols], us_data[[sp]]$sag$palate_trace$Y), na.rm=TRUE)
+
 		}
+		complete_us_xrange = range(c(complete_us_xrange, us_xrange))
+		complete_us_yrange = range(c(complete_us_yrange, us_yrange))
 	}
+	print (paste0('all scaled ultrasound X values are within (',floor(complete_us_xrange[1]*10)/10,', ',ceiling(complete_us_xrange[2]*10)/10,')'))
+	print (paste0('all scaled ultrasound Y values are within (',floor(complete_us_yrange[1]*10)/10,', ',ceiling(complete_us_yrange[2]*10)/10,')'))
+
+	expected_aspect_ratio = 3/2
+
+	print('summary of ultrasound and palate points after rotation:')
+	if (diff(complete_us_xrange)<diff(complete_us_yrange)*expected_aspect_ratio){
+		new_us_xrange = complete_us_xrange + (diff(complete_us_yrange)*expected_aspect_ratio-diff(complete_us_xrange))*c(-0.5,0.5)
+		new_us_yrange = complete_us_yrange
+	}else{
+		new_us_xrange = complete_us_xrange
+		new_us_yrange = complete_us_yrange + (diff(complete_us_xrange)/expected_aspect_ratio-diff(complete_us_yrange))*c(-0.5,0.5)
+	}
+
+	new_us_xrange = c(floor(new_us_xrange[1]*10)/10,ceiling(new_us_xrange[2]*10)/10)
+	new_us_yrange = c(floor(new_us_yrange[1]*10)/10,ceiling(new_us_yrange[2]*10)/10)
+
+	print('to preserve reasonable aspect ratio, try:')
+
+	print (paste0('xlim_ultrasound = c(',new_us_xrange[1],', ',new_us_xrange[2],')'))
+	print (paste0('ylim_ultrasound = c(',new_us_yrange[1],', ',new_us_yrange[2],')'))
+
 	aaa_data
 }
 
@@ -858,10 +1059,25 @@ xy2polar <- function(aaa_data, speakers=NULL, replaceXY=FALSE, addTR=TRUE, plane
 
 	if (is.null(speakers)) speakers=names(aaa_data)
 
+
+	match_XY = '^[XY][0-9]'
+	match_xy = '_[xy]$'
+
+
 	for (sp in speakers){
 		print(sp)
 		for (plane in planes){
-			point_colnames = names(aaa_data[[sp]][[plane]]$tongue_traces)[grepl('^[XY][0-9]',names(aaa_data[[sp]][[plane]]$tongue_traces))]
+
+			matches_lower = ifelse(sum(grepl(match_xy,names(aaa_data[[sp]][[plane]]$tongue_traces))) > sum(grepl(match_XY,names(aaa_data[[sp]][[plane]]$tongue_traces))),TRUE,FALSE)
+
+			print(matches_lower)
+
+			if (matches_lower){
+				point_colnames = names(aaa_data[[sp]][[plane]]$tongue_traces)[grepl(match_xy,names(aaa_data[[sp]][[plane]]$tongue_traces))]
+			}else{
+				point_colnames = names(aaa_data[[sp]][[plane]]$tongue_traces)[grepl(match_XY,names(aaa_data[[sp]][[plane]]$tongue_traces))]
+			}
+
 			tongue_data_wide = aaa_data[[sp]][[plane]]$tongue_traces[,point_colnames]
 			polar_origin = aaa_data[[sp]][[plane]]$origin
 			
@@ -882,10 +1098,15 @@ xy2polar <- function(aaa_data, speakers=NULL, replaceXY=FALSE, addTR=TRUE, plane
 				aaa_data[[sp]][[plane]]$tongue_traces_polar = NULL
 			}	
 			if (addTR){
-				names(aaa_data[[sp]][[plane]]$tongue_traces_polar) = gsub('X','T',names(aaa_data[[sp]][[plane]]$tongue_traces_polar))
-				names(aaa_data[[sp]][[plane]]$tongue_traces_polar) = gsub('Y','R',names(aaa_data[[sp]][[plane]]$tongue_traces_polar))
-
-				aaa_data[[sp]][[plane]]$tongue_traces = aaa_data[[sp]][[plane]]$tongue_traces[,!grepl('[TR][0-9]',names(aaa_data[[sp]][[plane]]$tongue_traces))]
+				if (matches_lower){
+					names(aaa_data[[sp]][[plane]]$tongue_traces_polar) = gsub('_x','_t',names(aaa_data[[sp]][[plane]]$tongue_traces_polar))
+					names(aaa_data[[sp]][[plane]]$tongue_traces_polar) = gsub('_y','_r',names(aaa_data[[sp]][[plane]]$tongue_traces_polar))
+					aaa_data[[sp]][[plane]]$tongue_traces = aaa_data[[sp]][[plane]]$tongue_traces[,!grepl('_[tr]$',names(aaa_data[[sp]][[plane]]$tongue_traces))]
+				}else{
+					names(aaa_data[[sp]][[plane]]$tongue_traces_polar) = gsub('X','T',names(aaa_data[[sp]][[plane]]$tongue_traces_polar))
+					names(aaa_data[[sp]][[plane]]$tongue_traces_polar) = gsub('Y','R',names(aaa_data[[sp]][[plane]]$tongue_traces_polar))					
+					aaa_data[[sp]][[plane]]$tongue_traces = aaa_data[[sp]][[plane]]$tongue_traces[,!grepl('^[TR][0-9]',names(aaa_data[[sp]][[plane]]$tongue_traces))]
+				}
 
 				aaa_data[[sp]][[plane]]$tongue_traces = cbind(aaa_data[[sp]][[plane]]$tongue_traces, aaa_data[[sp]][[plane]]$tongue_traces_polar)
 				aaa_data[[sp]][[plane]]$tongue_traces_polar = NULL
@@ -990,17 +1211,17 @@ measure_lips <- function(aaa_data, speakers=NULL, plotting=FALSE){
 		print(sp)
 		plane='video'
 		lipdata = aaa_data[[sp]][[plane]]$lip_traces
-		lipdata$lips_horiz = with(lipdata, rightLip_x-leftLip_x)
-		lipdata$lips_vert = with(lipdata, topmidinner_y-bottommidinner_y)
-		lipdata$lips_purse = with(lipdata, lips_vert / lips_horiz)
+		if (nrow(lipdata)){
+			lipdata$lips_horiz = with(lipdata, rightLip_x-leftLip_x)
+			lipdata$lips_vert = with(lipdata, topmidinner_y-bottommidinner_y)
+			lipdata$lips_purse = with(lipdata, lips_vert / lips_horiz)
 
-
-
-		lipdata$lips_area = apply(lipdata[,c('leftLip_x', 'bottomleftinner_x', 'bottommidinner_x', 'bottomrightinner_x', 'rightLip_x', 'toprightinner_x', 'topmidinner_x', 'topleftinner_x',
-			                                  'leftLip_y', 'bottomleftinner_y', 'bottommidinner_y', 'bottomrightinner_y', 'rightLip_y', 'toprightinner_y', 'topmidinner_y', 'topleftinner_y')], 
-								  1, liparea)
-		
-		aaa_data[[sp]][[plane]]$lip_traces = lipdata
+			lipdata$lips_area = apply(lipdata[,c('leftLip_x', 'bottomleftinner_x', 'bottommidinner_x', 'bottomrightinner_x', 'rightLip_x', 'toprightinner_x', 'topmidinner_x', 'topleftinner_x',
+				                                 'leftLip_y', 'bottomleftinner_y', 'bottommidinner_y', 'bottomrightinner_y', 'rightLip_y', 'toprightinner_y', 'topmidinner_y', 'topleftinner_y')], 
+									  1, liparea)
+			
+			aaa_data[[sp]][[plane]]$lip_traces = lipdata
+		}
 	}
 	aaa_data
 }
@@ -2772,40 +2993,107 @@ tgfile2list <- function(textgrid_filepath, tiers=NULL){
   tglist
 }
 
+collect_interval_boundaries = function(tokendata){
+	print(tokendata[,c('phone','Time_of_sample_in_recording','phone_start','phone_end','phone_time','middle_frame')])
+	middle_frames = tokendata[tokendata$middle_frame,]
+	print(middle_frames[,c('phone','Time_of_sample_in_recording','phone_start','phone_end','phone_time','middle_frame')])
 
-compare_trajectories <- function(aaa_data, sp, plane='sag', signal='TRangle', words=c(), token.col='word_id', main=''){
+}
+
+# phone_start phone_end phone_time
+# normalize_time = function(absolute_times){
+# 	(absolute_times - min(absolute_times)) / diff(range(absolute_times))
+# }
+normalize_time <- function(absolute_times, tokendata){
+	(absolute_times - min(tokendata$phone_start)) / (max(tokendata$phone_end) - min(tokendata$phone_start))
+}
+
+
+compare_trajectories <- function(aaa_data, sp, plane='sag', signal='TRangle', words=NULL, select_col='word', select_vals=NULL, 
+	  ref_phone=NULL, ref_edge=NULL, ylim=NULL, main='', show.ssanova=FALSE, show.traces=TRUE){
   
+	get_mean_reference_time <- function(){
+	  reference_times = c()
+	  for (i in 1:how_many_words){
+	    w = select_vals[i]
+	    subdata = plotdata[plotdata[,select_col]==w,]
+	    for (tk in unique(subdata[,token.col])){
+	      tokendata = subdata[subdata[,token.col]==tk,]
+	      middledata = tokendata[tokendata$middle_frame,]
+	      reference_times = c(reference_times, normalize_time(middledata[middledata$phone%in%ref_phone,ref_edge], tokendata))
+	    }
+	  }
+	  mean(reference_times, na.rm=TRUE)
+	}
+
+  if (!is.null(words)){
+  	select_col='word'
+  	select_vals=words
+  }
+  token.col = paste0(select_col,'_id')
+
   name_of = list(TRangle='tongue root retraction', TDangle='tongue dorsum height', TTangle='tongue tip height')
-  how_many_words = length(words)
+  how_many_words = length(select_vals)
   xlab=c(0,1)
   ylab = ifelse(signal%in%names(name_of), name_of[[signal]], signal)
   
   if (plane=='video'){
-  	plotdata = aaa_data[[sp]][[plane]]$lip_traces[aaa_data[[sp]][[plane]]$lip_traces$word%in%words,]
+  	plotdata = aaa_data[[sp]][[plane]]$lip_traces[aaa_data[[sp]][[plane]]$lip_traces[,select_col]%in%select_vals,]
   }else{
-	plotdata = aaa_data[[sp]][[plane]]$tongue_traces[aaa_data[[sp]][[plane]]$tongue_traces$word%in%words,]
+	plotdata = aaa_data[[sp]][[plane]]$tongue_traces[aaa_data[[sp]][[plane]]$tongue_traces[,select_col]%in%select_vals,]
   }
-  # print(plotdata)
-  word_palette = rainbow(length(words), v=0.6, a=0.8)
+  # print(head(plotdata))
+
+
+
+
+
+  word_palette = rainbow(length(select_vals), v=0.6, a=0.8)
   
   # ylim=range(plotdata[,signal]) + c(-5, 0)
-  ylim=range(plotdata[,signal]) + diff(range(plotdata[,signal]))*c(-0.1,0)
+  if (is.null(ylim)){
+	  ylim=range(plotdata[,signal], na.rm=TRUE) + diff(range(plotdata[,signal], na.rm=TRUE))*c(-0.1,0)
+  }
   xlim=c(0,1)
   
   plot(0, 0, type='n', xlim=xlim, ylim=ylim, xlab='relative time', ylab=ylab, main=main)
   
+  mean_reference_time = get_mean_reference_time()
+  
+  ssanova_input_data = c()
+
+  abline(v=mean_reference_time)
   for (i in 1:how_many_words){
-    w = words[i]
-    subdata = plotdata[plotdata[,'word']==w,]
+    w = select_vals[i]
+    subdata = plotdata[plotdata[,select_col]==w,]
+
     for (tk in unique(subdata[,token.col])){
       tokendata = subdata[subdata[,token.col]==tk,]
+      tokendata$relative_time = normalize_time(tokendata$Time_of_sample_in_recording, tokendata)
+      reference_offset = normalize_time(tokendata[tokendata$phone%in%ref_phone,ref_edge], tokendata)[1] - mean_reference_time
+      tokendata$offset_time = tokendata$relative_time - reference_offset
+      middledata = tokendata[tokendata$middle_frame,]
       
-      tokendata$relative_time = (tokendata$Time_of_sample_in_recording - min(tokendata$Time_of_sample_in_recording)) / diff(range(tokendata$Time_of_sample_in_recording))
-      
-      points(tokendata$relative_time, tokendata[,signal], type='l', col=word_palette[i])
+      ssanova_token = tokendata[,c(select_col, paste0(select_col,'_id'), 'offset_time', signal)]
+      names(ssanova_token)[2:4] = c('token','X','Y')
+      ssanova_input_data = rbind(ssanova_input_data,ssanova_token)
+      if (show.traces){
+	      points(tokendata$offset_time, tokendata[,signal], type='l', col=word_palette[i])
+	  }
     }
   }
-  legend('bottomleft', legend=words, col=word_palette[1:how_many_words], lwd=1, ncol=how_many_words, bg='white')
+  ssanova_input_data[,select_col] = factor(ssanova_input_data[,select_col])
+  if (show.ssanova){
+	  xxx = cart.ssanova(ssanova_input_data, data.cat=select_col, overplot=TRUE, printing=FALSE, show.legend=FALSE)
+  }
+
+  legend('bottomleft', legend=select_vals, col=word_palette[1:how_many_words], lwd=1, ncol=how_many_words, bg='white')
+
+  if (show.ssanova){
+  	return (list(ssanova=xxx, mean_reference_time=mean_reference_time))
+  }else{
+  	return (NULL)
+  }
 }
 
 
@@ -2844,7 +3132,7 @@ add_radial_grid <- function(aaa_data, sp, plane='sag', from=-10, to=170, length=
 arpabet2ipa = function(arpabet){
   ipa_of = list(K='k', B='b', P='p', T='t', S='s', SH='ʃ', CH='tʃ', HH='h', R='ɹ', 
                 N='n', T='t', D='d', Z='z', G='ɡ', AA1='ɑ', IH1='ɪ', IY1='i', AE1='æ', 
-                UW1='u', ER0='ɚ', ER1='ɜ˞', EH1='ɛ', EY1='e', AH0='ə')
+                UW1='u', ER0='ɚ', ER1='ɜ˞', EH1='ɛ', EY1='e', AH0='ə', spn='spn')
   ipa = c()
   for (a in arpabet){
   	# print(a)
@@ -2943,9 +3231,19 @@ read_all_dlc_data <- function(speakers, readwritepath=NULL, ultrasound_model_nam
 	aaa_data
 }
 
-plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, ylim=NULL, polar=FALSE, palate=NULL, img=NULL){
+plot_sample_frames <- function(aaa_data, speakers=NULL, label='', 
+	xlim=c(0,640), ylim=c(0,480), xlim_ultrasound=NULL, ylim_ultrasound=NULL, xlim_video=NULL, ylim_video=NULL, 
+	polar=FALSE, palate=NULL, img=NULL, show_grid=FALSE){
 
 	if (is.null(speakers)) speakers=names(aaa_data)
+	if (is.null(xlim_ultrasound)){
+		xlim_ultrasound = xlim 
+		ylim_ultrasound = ylim
+	}
+	if (is.null(xlim_video)){
+		xlim_video = xlim 
+		ylim_video = ylim
+	}
 
 	pdf(paste0('sample_frames_',label,'.pdf'), height=5, width=6, onefile=TRUE)
 	for (speaker in speakers){
@@ -2957,16 +3255,27 @@ plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, yli
 				sample_trace = aaa_data[[speaker]]$sag$tongue_traces[aaa_data[[speaker]]$sag$tongue_traces$image%in%img,][1,]
 			}
 			if (polar){
-				Xs = as.numeric(sample_trace[,grepl('T[0-9]', names(sample_trace))])
-				Ys = as.numeric(sample_trace[,grepl('R[0-9]', names(sample_trace))])
+				Xs = as.numeric(sample_trace[,grepl('T[0-9]', names(sample_trace))|grepl('_t$', names(sample_trace))])
+				Ys = as.numeric(sample_trace[,grepl('R[0-9]', names(sample_trace))|grepl('_r$', names(sample_trace))])
+				plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'sagittal', label), xlim=c(0,2*pi), ylim=ylim_ultrasound)
 			}else{
-				Xs = as.numeric(sample_trace[,grepl('X[0-9]', names(sample_trace))|grepl('_x', names(sample_trace))])
-				Ys = as.numeric(sample_trace[,grepl('Y[0-9]', names(sample_trace))|grepl('_y', names(sample_trace))])
+				Xs = as.numeric(sample_trace[,grepl('X[0-9]', names(sample_trace))|grepl('_x$', names(sample_trace))])
+				Ys = as.numeric(sample_trace[,grepl('Y[0-9]', names(sample_trace))|grepl('_y$', names(sample_trace))])
+				plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'sagittal', label), xlim=xlim_ultrasound, ylim=ylim_ultrasound)
+				if ('origin' %in% names(aaa_data[[speaker]]$sag)){
+					points(aaa_data[[speaker]]$sag$origin[1], aaa_data[[speaker]]$sag$origin[2])
+				}
 			}
-			plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'sagittal', label), xlim=xlim, ylim=ylim)
-			if ('origin' %in% names(aaa_data[[speaker]]$sag)){
-				points(aaa_data[[speaker]]$sag$origin[1], aaa_data[[speaker]]$sag$origin[2])
+			if (show_grid==TRUE){
+				abline(v=xlim_ultrasound[1]:xlim_ultrasound[2],col='gray'); abline(h=ylim_ultrasound[1]:ylim_ultrasound[2],col='gray')
 			}
+			# if (!is.null(palate)){
+			# 	print(palate)
+			# 	print(names(aaa_data[[speaker]]$sag))
+			# 	print(points(aaa_data[[speaker]]$sag[[palate]]))
+			# 	print(points(aaa_data[[speaker]]$sag$palate_trace_rotated))
+			# 	points(aaa_data[[speaker]]$sag[[palate]], type='l')
+			# }
 			if (!is.null(palate)){
 				points(aaa_data[[speaker]]$sag[[palate]], type='l')
 			}
@@ -2985,7 +3294,10 @@ plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, yli
 				Xs = as.numeric(sample_trace[,grepl('X[0-9]', names(sample_trace))])
 				Ys = as.numeric(sample_trace[,grepl('Y[0-9]', names(sample_trace))])
 			}
-			plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'coronal', label), xlim=xlim, ylim=ylim)
+			plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'coronal', label), xlim=xlim_ultrasound, ylim=ylim_ultrasound)
+			if (show_grid==TRUE){
+				abline(v=xlim_ultrasound[1]:xlim_ultrasound[2],col='gray'); abline(h=ylim_ultrasound[1]:ylim_ultrasound[2],col='gray')
+			}
 			if ('origin' %in% names(aaa_data[[speaker]]$cor)){
 				points(aaa_data[[speaker]]$cor$origin[1], aaa_data[[speaker]]$cor$origin[2])
 			}
@@ -3003,12 +3315,18 @@ plot_sample_frames <- function(aaa_data, speakers=NULL, label='', xlim=NULL, yli
 			Xs = as.numeric(sample_trace[,grepl('_x', names(sample_trace))])
 			Ys = as.numeric(sample_trace[,grepl('_y', names(sample_trace))])
 			if(nrow(aaa_data[[speaker]]$video$lip_traces)){
-				plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'lips', label), xlim=xlim, ylim=ylim)
+				plot(Xs,Ys,col=rainbow(length(Xs)), pch=19, main=paste(speaker, 'lips', label), xlim=xlim_video, ylim=ylim_video)
+				if (show_grid==TRUE){
+					abline(v=xlim_ultrasound[1]:xlim_ultrasound[2],col='gray'); abline(h=ylim_ultrasound[1]:ylim_ultrasound[2],col='gray')
+				}
 				if ('origin' %in% names(aaa_data[[speaker]]$video)){
 					points(aaa_data[[speaker]]$video$origin[1], aaa_data[[speaker]]$video$origin[2])
 				}
 			}else{
-				plot(0,0,type='n', main=paste(speaker, 'lips', label), xlim=xlim, ylim=ylim)				
+				plot(0,0,type='n', main=paste(speaker, 'lips', label), xlim=xlim_video, ylim=ylim_video)				
+				if (show_grid==TRUE){
+					abline(v=xlim_ultrasound[1]:xlim_ultrasound[2],col='gray'); abline(h=ylim_ultrasound[1]:ylim_ultrasound[2],col='gray')
+				}
 			}
 		}
 	}
@@ -3062,4 +3380,167 @@ find_tongue_point_density <- function(speakers=NULL, us_data, xn, yn, scale=1, p
 		tongue_point_density[[sp]] = kde2d(x*scale, y*scale, n = c(xn*scale, yn*scale))
 	}
 	tongue_point_density
+}
+
+
+scale_to_cm <- function(us_data, speakers=NULL, depths_filepath=NULL){
+
+	if (is.null(speakers)) speakers=names(us_data)
+
+	depths = read.csv(depths_filepath)
+
+	complete_us_xrange = c()
+	complete_us_yrange = c()
+	complete_lips_xrange = c()
+	complete_lips_yrange = c()
+
+	for (sp in speakers){
+		print(sp)
+
+		tongue_xcols = names(us_data[[sp]]$sag$tongue_traces)[grepl('X[0-9]', names(us_data[[sp]]$sag$tongue_traces))|grepl('_x', names(us_data[[sp]]$sag$tongue_traces))]
+		tongue_ycols = names(us_data[[sp]]$sag$tongue_traces)[grepl('Y[0-9]', names(us_data[[sp]]$sag$tongue_traces))|grepl('_y', names(us_data[[sp]]$sag$tongue_traces))]
+
+		lips_xcols   = names(us_data[[sp]]$video$lip_traces)[grepl('X[0-9]', names(us_data[[sp]]$video$lip_traces))|grepl('_x', names(us_data[[sp]]$video$lip_traces))]
+		lips_ycols   = names(us_data[[sp]]$video$lip_traces)[grepl('Y[0-9]', names(us_data[[sp]]$video$lip_traces))|grepl('_y', names(us_data[[sp]]$video$lip_traces))]
+
+		uscmpermixel = depths[depths$speaker==sp,'usmmpermixel']/10
+		videocmpermixel = depths[depths$speaker==sp,'videommpermixel']/10
+
+		# ULTRASOUND ORIGIN: MEAN HYOID POSITION
+		us_zero_x = mean(us_data[[sp]]$sag$tongue_traces[,'hyoid_x'])
+		us_zero_y = mean(us_data[[sp]]$sag$tongue_traces[,'hyoid_y'])
+
+		us_data[[sp]]$sag$tongue_traces[,tongue_xcols] = (us_data[[sp]]$sag$tongue_traces[,tongue_xcols] - us_zero_x) * uscmpermixel
+		us_data[[sp]]$sag$tongue_traces[,tongue_ycols] = (us_data[[sp]]$sag$tongue_traces[,tongue_ycols] - us_zero_y) * uscmpermixel
+
+		us_data[[sp]]$sag$palate_trace$X = (us_data[[sp]]$sag$palate_trace$X - us_zero_x) * uscmpermixel
+		us_data[[sp]]$sag$palate_trace$Y = (us_data[[sp]]$sag$palate_trace$Y - us_zero_y) * uscmpermixel
+
+		us_xrange = range(c(us_data[[sp]]$sag$tongue_traces[,tongue_xcols], us_data[[sp]]$sag$palate_trace$X), na.rm=TRUE)
+		us_yrange = range(c(us_data[[sp]]$sag$tongue_traces[,tongue_ycols], us_data[[sp]]$sag$palate_trace$Y), na.rm=TRUE)
+		#print(paste('ultrasound range:', us_xrange[1], us_xrange[2], us_yrange[1], us_yrange[2]))
+
+		# VIDEO ORIGIN: MEAN LIP DOT POSITION
+		if (nrow(us_data[[sp]]$video$lip_traces)){
+			lips_zero_x = mean(unlist(us_data[[sp]]$video$lip_traces[,lips_xcols]))
+			lips_zero_y = mean(unlist(us_data[[sp]]$video$lip_traces[,lips_ycols]))
+			us_data[[sp]]$video$lip_traces[,lips_xcols] = (us_data[[sp]]$video$lip_traces[,lips_xcols] - lips_zero_x) * videocmpermixel
+			us_data[[sp]]$video$lip_traces[,lips_ycols] = (us_data[[sp]]$video$lip_traces[,lips_ycols] - lips_zero_y) * videocmpermixel
+
+			lips_xrange = range(c(us_data[[sp]]$video$lip_traces[,lips_xcols]), na.rm=TRUE)
+			lips_yrange = range(c(us_data[[sp]]$video$lip_traces[,lips_ycols]), na.rm=TRUE)
+			# print(paste('lips range:', lips_xrange[1], lips_xrange[2], lips_yrange[1], lips_yrange[2]))
+			complete_lips_xrange = range(c(complete_lips_xrange, lips_xrange))
+			complete_lips_yrange = range(c(complete_lips_yrange, lips_yrange))
+		}
+		complete_us_xrange = range(c(complete_us_xrange, us_xrange))
+		complete_us_yrange = range(c(complete_us_yrange, us_yrange))
+
+	}
+
+	# print (complete_us_xrange)
+	print (paste0('all scaled ultrasound X values are within (',floor(complete_us_xrange[1]*10)/10,', ',ceiling(complete_us_xrange[2]*10)/10,')'))
+	# print (complete_us_yrange)
+	print (paste0('all scaled ultrasound Y values are within (',floor(complete_us_yrange[1]*10)/10,', ',ceiling(complete_us_yrange[2]*10)/10,')'))
+	# print (complete_lips_xrange)
+	print (paste0('all scaled lip X values are within (',floor(complete_lips_xrange[1]*10)/10,', ',ceiling(complete_lips_xrange[2]*10)/10,')'))
+	# print (complete_lips_yrange)
+	print (paste0('all scaled lip Y values are within (',floor(complete_lips_yrange[1]*10)/10,', ',ceiling(complete_lips_yrange[2]*10)/10,')'))
+
+
+	expected_aspect_ratio = 3/2
+
+	print('summary of ultrasound, palate, and lip points:')
+	if (diff(complete_us_xrange)<diff(complete_us_yrange)*expected_aspect_ratio){
+		new_us_xrange = complete_us_xrange + (diff(complete_us_yrange)*expected_aspect_ratio-diff(complete_us_xrange))*c(-0.5,0.5)
+		new_us_yrange = complete_us_yrange
+	}else{
+		new_us_xrange = complete_us_xrange
+		new_us_yrange = complete_us_yrange + (diff(complete_us_xrange)/expected_aspect_ratio-diff(complete_us_yrange))*c(-0.5,0.5)
+	}
+
+	if (diff(complete_lips_xrange)<diff(complete_lips_yrange)*expected_aspect_ratio){
+		new_lips_xrange = complete_lips_xrange + (diff(complete_lips_yrange)*expected_aspect_ratio-diff(complete_lips_xrange))*c(-0.5,0.5)
+		new_lips_yrange = complete_lips_yrange
+	}else{
+		new_lips_xrange = complete_lips_xrange
+		new_lips_yrange = complete_lips_yrange + (diff(complete_lips_xrange)/expected_aspect_ratio-diff(complete_lips_yrange))*c(-0.5,0.5)
+	}
+	new_us_xrange = c(floor(new_us_xrange[1]*10)/10,ceiling(new_us_xrange[2]*10)/10)
+	new_us_yrange = c(floor(new_us_yrange[1]*10)/10,ceiling(new_us_yrange[2]*10)/10)
+	new_lips_xrange = c(floor(new_lips_xrange[1]*10)/10,ceiling(new_lips_xrange[2]*10)/10)
+	new_lips_yrange = c(floor(new_lips_yrange[1]*10)/10,ceiling(new_lips_yrange[2]*10)/10)
+
+	print('to preserve reasonable aspect ratio, try:')
+
+	print (paste0('xlim_ultrasound = c(',new_us_xrange[1],', ',new_us_xrange[2],')'))
+	print (paste0('ylim_ultrasound = c(',new_us_yrange[1],', ',new_us_yrange[2],')'))
+	print (paste0('xlim_video = c(',new_lips_xrange[1],', ',new_lips_xrange[2],')'))
+	print (paste0('ylim_video = c(',new_lips_yrange[1],', ',new_lips_yrange[2],')'))
+
+
+	# print ('choose your xlim_ultrasound, ylim_ultrasound, xlim_video, and ylim_video accordingly')
+
+	us_data
+}
+
+
+get_convex_polygon_Kalasha_version <- function(one_token, origin, narrow_angles=c(45*pi/180, 105*pi/180)){
+	polygonX <- c(origin[1], one_token$X)
+	polygonY <- c(origin[2], -one_token$Y)
+	convexpolygon <- chull(polygonX, polygonY)
+
+	subtoken <- subset(one_token, angle > narrow_angles[1] & angle < narrow_angles[2])
+	max_narrow_radius <- max(subtoken$radius)
+	end_of_narrow_polygon <- 1+which(one_token$radius==max_narrow_radius & one_token$angle > narrow_angles[1] & one_token$angle < narrow_angles[2])[1] 
+
+	all_indices <- 1:length(polygonX)	
+	if (end_of_narrow_polygon < length(polygonX)){
+		convexpolygon2 <- sort(unique(c(convexpolygon, end_of_narrow_polygon:length(polygonX))))
+	}
+	
+	non_envelope <- as.numeric(!all_indices%in%convexpolygon2)
+	if (sum(non_envelope)>0){
+		# Run Length Encoding
+		non_envelope_rle <- rle(non_envelope)
+		max_run_length <- max(non_envelope_rle$lengths[non_envelope_rle$values==1])
+		max_run_number <- which(non_envelope_rle$lengths==max_run_length & non_envelope_rle$values==1)[1]
+		max_run_indices <- (1+sum(non_envelope_rle$lengths[1:max_run_number])-max_run_length):sum(non_envelope_rle$lengths[1:max_run_number])
+		convexpolygon3 <- setdiff(all_indices, max_run_indices)
+	}else{
+		convexpolygon3 <- all_indices
+	}
+	list(X=polygonX, Y=polygonY, convex=convexpolygon3)
+}
+
+get_convex_polygon <- function(one_token, origin){
+	polygonX <- c(origin[1], one_token$X)
+	polygonY <- c(origin[2], one_token$Y)
+	convexpolygon <- chull(polygonX, polygonY)
+
+	# subtoken <- subset(one_token, angle > narrow_angles[1] & angle < narrow_angles[2])
+	# max_narrow_radius <- max(subtoken$radius)
+	# end_of_narrow_polygon <- 1+which(one_token$radius==max_narrow_radius & one_token$angle > narrow_angles[1] & one_token$angle < narrow_angles[2])[1] 
+
+	if (FALSE){
+		all_indices <- 1:length(polygonX)	
+		# if (end_of_narrow_polygon < length(polygonX)){
+		# 	convexpolygon2 <- sort(unique(c(convexpolygon, end_of_narrow_polygon:length(polygonX))))
+		# }
+		
+		# THIS IS TO FIND ONLY THE LONGEST CONCAVITY
+		non_envelope <- as.numeric(!all_indices%in%convexpolygon)
+		if (sum(non_envelope)>0){
+			# Run Length Encoding
+			non_envelope_rle <- rle(non_envelope)
+			max_run_length <- max(non_envelope_rle$lengths[non_envelope_rle$values==1])
+			max_run_number <- which(non_envelope_rle$lengths==max_run_length & non_envelope_rle$values==1)[1]
+			max_run_indices <- (1+sum(non_envelope_rle$lengths[1:max_run_number])-max_run_length):sum(non_envelope_rle$lengths[1:max_run_number])
+			convexpolygon3 <- setdiff(all_indices, max_run_indices)
+		}else{
+			convexpolygon3 <- all_indices
+		}
+	}
+	# list(X=polygonX, Y=polygonY, convex=convexpolygon3)
+	list(X=polygonX, Y=polygonY, convex=convexpolygon)
 }

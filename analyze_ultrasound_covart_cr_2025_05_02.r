@@ -18,22 +18,73 @@ source(paste0(scriptpath,'tongue_ssanova.r'))
 # load('cr_dlc_2025_02_10.RData')
 load('cr_dlc_2025_04_02.RData')
 ###########################################################################################################################################
-# adding additional articulatory measures
+# sample plotting
 ###########################################################################################################################################
 speakers = sort(names(us_data))
 speakers = c("cr06", "cr07", "cr08", "cr11", "cr15", "cr18", "cr23", "cr24", "cr26", "cr28", "cr29", "cr32", "cr30", "cr09", "cr13", "cr03", "cr02", "cr05", "cr01", "cr04", "cr19", "cr10", "cr14", "cr21", "cr33")
 
+
 source(paste0(scriptpath,'read_ultrasound_functions.r'))
 source(paste0(scriptpath,'tongue_ssanova.r'))
-source(paste0(scriptpath,'articulatory_measurement_functions.r'))
 
-us_data = measure_blade_root(us_data)
-us_data = measure_velocity(us_data)
-us_data = measure_velocity(us_data, plane='video')
-us_data = measure_concavity(us_data)
+# sp='cr06'
+# xx = us_data[[sp]]$sag$tongue_traces[1:40,]
 
-save(us_data, file='cr_dlc_2025_11_07.RData')
+
+measure_tongue <- function(aaa_data, speakers=NULL, plotting=FALSE){
+
+	if (is.null(speakers)) speakers=names(aaa_data)
+
+	for (sp in speakers){
+		print(sp)
+		plane='sag'
+		tonguedata = aaa_data[[sp]][[plane]]$tongue_traces
+		if (nrow(tonguedata)){
+			tonguedata$root_advancement = with(tonguedata, (X1+X2+X3)/3)
+			tonguedata$blade_angle = with(tonguedata, atan((Y10-Y8)/(X10/X8)))
+			aaa_data[[sp]][[plane]]$tongue_traces = tonguedata
+		}
+	}
+	aaa_data
+}
+
+us_data = measure_tongue(us_data)
+
+require(pracma)
+for (sp in speakers){
+	print(sp)
+	us_data[[sp]]$sag$tongue_traces$absolute_concavity = NA
+	us_data[[sp]]$sag$tongue_traces$relative_concavity = NA
+	for (r in 1:nrow(us_data[[sp]]$sag$tongue_traces)){
+
+		one_token = us_data[[sp]]$sag$tongue_traces[r,]
+		original_polygon = data.frame(X=c(us_data[[sp]]$sag$origin[1], as.numeric(one_token[,paste0('X',1:11)])), 
+			                          Y=c(us_data[[sp]]$sag$origin[2], as.numeric(one_token[,paste0('Y',1:11)])))
+		convex_indices <- chull(original_polygon$X, original_polygon$Y)
+		tongue_area = round(abs(polyarea(original_polygon$X,original_polygon$Y)),6)
+		convex_area = round(abs(polyarea(original_polygon$X[convex_indices],original_polygon$Y[convex_indices])),6)
+		# print (c(r,tongue_area,convex_area))
+		us_data[[sp]]$sag$tongue_traces$absolute_concavity[r] = convex_area - tongue_area
+		us_data[[sp]]$sag$tongue_traces$relative_concavity[r] = sqrt((convex_area-tongue_area)/tongue_area)
+		# print (c(r,tongue_area,convex_area,absolute_concavity,relative_concavity))
+	}
+}
+
+save(us_data, file='cr_dlc_2025_04_17.RData')
 # load('cr_dlc_2025_04_17.RData')
+
+# plot(0,0,xlim=c(-2,7),ylim=c(-2,7))
+# convexpolygon <- chull(original_polygon$X, original_polygon$Y)
+# polygon(original_polygon$X,original_polygon$Y, border='blue')
+# polygon(original_polygon$X[convexpolygon],original_polygon$Y[convexpolygon], border='red')
+# library(pracma)
+# abs(polyarea(original_polygon$X,original_polygon$Y))
+# abs(polyarea(original_polygon$X[convexpolygon],original_polygon$Y[convexpolygon]))
+
+
+
+# tongues_measurements$concavity <- with(tongues_measurements, sqrt((convex_area-tongue_area)/tongue_area))
+
 
 
 
@@ -75,45 +126,19 @@ for (sp in speakers){
 }
 dev.off()
 
-cairo_pdf('sample_lip_velocity_trajectories_2025_11_07.pdf', height=5,width=6,onefile=TRUE)
-for (sp in speakers){
-	compare_trajectories(us_data, sp, select_col = 'phrase', select_vals=c('A-KEEP','A-CREEP'), 
-		plane='video', signal='lip_velocity', ref_phone='Kh', ref_edge='phone_end', ylim=c(-5,30), main=paste(sp,'\n','lip velocity'))
-}
-dev.off()
-
-cairo_pdf('sample_root_trajectories_2025_11_07.pdf', height=5,width=6,onefile=TRUE)
+source(paste0(scriptpath,'read_ultrasound_functions.r'))
+cairo_pdf('sample_root_trajectories_2025_04_23.pdf', height=5,width=6,onefile=TRUE)
 for (sp in speakers){
 	compare_trajectories(us_data, sp, select_col = 'phrase', select_vals=c('A-KEEP','A-CREEP'), 
 		plane='sag', signal='root_advancement', ref_phone='Kh', ref_edge='phone_end', ylim=c(-2,2), main=paste(sp,'\n','root advancement'))
 }
 dev.off()
 
-cairo_pdf('sample_blade_trajectories_2025_11_07.pdf', height=5,width=6,onefile=TRUE)
-for (sp in speakers){
-	compare_trajectories(us_data, sp, select_col = 'phrase', select_vals=c('A-KEEP','A-CREEP'), 
-		plane='sag', signal='blade_angle', ref_phone='Kh', ref_edge='phone_end', ylim=c(-1.5,0.5), main=paste(sp,'\n','blade angle'))
-}
-dev.off()
-
-cairo_pdf('sample_tongue_velocity_trajectories_2025_11_07.pdf', height=5,width=6,onefile=TRUE)
-for (sp in speakers){
-	compare_trajectories(us_data, sp, select_col = 'phrase', select_vals=c('A-KEEP','A-CREEP'), 
-		plane='sag', signal='tongue_velocity', ref_phone='Kh', ref_edge='phone_end', ylim=c(-5,40), main=paste(sp,'\n','tongue velocity'))
-}
-dev.off()
-
-cairo_pdf('sample_relative_concavity_trajectories_2025_11_07.pdf', height=5,width=6,onefile=TRUE)
-for (sp in speakers){
-	compare_trajectories(us_data, sp, select_col = 'phrase', select_vals=c('A-KEEP','A-CREEP'), 
-		plane='sag', signal='relative_concavity', ref_phone='R', ref_edge='phone_end', ylim=c(-0.1,0.4), main=paste(sp,'\n','relative concavity'))
-}
-dev.off()
 
 source(paste0(scriptpath,'read_ultrasound_functions.r'))
 source(paste0(scriptpath,'tongue_ssanova.r'))
 
-# blade_crow_coat_comparison = list()
+blade_crow_coat_comparison = list()
 
 cairo_pdf('sample_blade_trajectories_2025_04_23.pdf', height=5,width=6,onefile=TRUE)
 for (sp in speakers){
